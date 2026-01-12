@@ -1,0 +1,31 @@
+/* 1. Memperbaiki Grid Stats Card di Mobile */
+@media (max-width: 767px) {
+    /* Memaksa Stats menjadi 1 kolom saja di HP */
+    .fi-wi-stats-overview-stats-ctn {
+        grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+        gap: 1rem !important;
+    }
+
+    /* Merapikan Widget Tabel agar tidak meluber dan punya jarak yang pas */
+    .fi-wi-table, .fi-wi-widget {
+        margin-bottom: 1.5rem !important;
+    }
+
+    /* Memaksa semua widget mengambil lebar penuh di mobile */
+    .fi-wi {
+        grid-column: span 1 / span 1 !important;
+    }
+
+    .fi-ta-content-grid-item {
+        margin-bottom: 0.75rem !important;
+        border: 1px solid #e5e7eb !important; /* Tambah border halus agar seperti kartu */
+        border-radius: 8px !important;
+        padding: 0.5rem !important;
+    }
+}
+
+/* 2. Opsional: Mempercantik tampilan Card agar tidak terlalu kaku */
+.fi-wi-stats-overview-stat {
+    border-radius: 12px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+}

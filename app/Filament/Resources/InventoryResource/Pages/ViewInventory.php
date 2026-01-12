@@ -1,0 +1,24 @@
+<?php
+
+namespace App\Filament\Resources\InventoryResource\Pages;
+
+use App\Filament\Resources\InventoryResource;
+use Filament\Actions;
+use Filament\Resources\Pages\ViewRecord;
+
+class ViewInventory extends ViewRecord
+{
+    protected static string $resource = InventoryResource::class;
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Actions\Action::make('back')
+            ->label('Kembali')
+            ->color('gray')
+            ->icon('heroicon-m-arrow-left')
+            ->url(static::getResource()::getUrl('index')),
+            Actions\EditAction::make(),
+        ];
+    }
+}
