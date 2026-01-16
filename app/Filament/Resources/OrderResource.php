@@ -48,7 +48,8 @@ class OrderResource extends Resource
                             ->label('Nama Instansi')
                             ->required(),
                         Forms\Components\TextInput::make('client_name')
-                            ->label('Nama Pemesan'),
+                            ->label('Nama Pemesan')
+                            ->required(),
                         Forms\Components\TextInput::make('phone')
                             ->label('Nomor HP')
                             ->tel()
@@ -59,11 +60,9 @@ class OrderResource extends Resource
                             ->required(),
                         Forms\Components\TextInput::make('quantity')
                             ->label('Jumlah (Pcs)')
-                            ->numeric()
-                            ->required(),
+                            ->numeric(),
                         Forms\Components\DatePicker::make('deadline')
-                            ->label('Tenggat Waktu (Deadline)')
-                            ->required(),
+                            ->label('Tenggat Waktu (Deadline)'),
                         Forms\Components\Select::make('status')
                             ->options([
                                 'Waiting' => 'Menunggu',

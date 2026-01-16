@@ -16,6 +16,7 @@ class EmployeeProductivity extends Page
     protected static ?string $title = 'Catatan Hasil Kerja';
     protected static string $view = 'filament.pages.employee-productivity';
 
+    protected static bool $shouldRegisterNavigation = true;
     public ?string $startDate = null;
     public ?string $endDate = null;
 
@@ -26,6 +27,11 @@ class EmployeeProductivity extends Page
             $this->startDate = now()->startOfWeek(Carbon::MONDAY)->format('Y-m-d');
             $this->endDate = now()->startOfWeek(Carbon::MONDAY)->addDays(5)->format('Y-m-d');
         }
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()->hasAnyRole(['Admin', 'Owner', 'Tailor', 'Cutting', 'QC/Packing']);
     }
 
     protected function getHeaderActions(): array

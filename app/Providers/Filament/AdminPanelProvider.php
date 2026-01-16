@@ -33,7 +33,7 @@ class AdminPanelProvider extends PanelProvider
             ->brandLogo(fn () => view('filament.custom.brand-logo'))
             ->brandLogoHeight('2rem')
             ->favicon(asset('images/konveksi_bandung_48.png'))
-            ->login()
+            ->login(\App\Filament\Pages\Auth\Login::class)
             ->profile(EditProfile::class)
             ->userMenuItems([
                 'profile' => MenuItem::make()

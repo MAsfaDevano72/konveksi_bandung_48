@@ -17,9 +17,12 @@ class Order extends Model
         'phone',
         'product_name',
         'quantity',
+        'qty_roll',
         'deadline',
         'status',
         'is_completed',
+        'is_stock_production', 
+        'inventory_id',
     ];
 
     protected static function booted()

@@ -10,6 +10,8 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use App\Models\Order;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
@@ -28,7 +30,7 @@ class InventoryResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()->hasAnyRole(['Admin', 'Owner']);
+        return auth()->user()->hasAnyRole(['Admin', 'Owner', 'Gudang']);
     }
 
     public static function form(Form $form): Form
@@ -180,6 +182,69 @@ class InventoryResource extends Resource
                 Tables\Actions\ViewAction::make()->label(''),
                 Tables\Actions\EditAction::make()->label(''),
                 Tables\Actions\DeleteAction::make()->label(''),
+                Tables\Actions\Action::make('produksi_langsung')
+                    ->label('Produksi Langsung')
+                    ->icon('heroicon-o-rocket-launch')
+                    ->color(fn ($record) => ($record->type === 'Kain' && $record->stock > 0) ? 'success' : 'gray')
+                    ->disabled(fn ($record) => $record->stock <= 0 || $record->type !== 'Kain')
+                    ->modalHeading(fn ($record) => "Produksi Langsung: {$record->name} - {$record->color} | Panjang {$record->length} Yard/Rol"  )
+                    ->form([
+                        Forms\Components\TextInput::make('model_baju')
+                            ->label('Model Baju (Contoh: Kemeja Pria M)')
+                            ->required()
+                            ->placeholder('Masukkan nama model...'),
+
+                        Forms\Components\TextInput::make('jumlah_rol')
+                            ->label('Jumlah Kain Digunakan (Rol)')
+                            ->numeric()
+                            ->required()
+                            ->minValue(1)
+                            ->rules([
+                                fn ($record) => "max:{$record->stock}",
+                            ])
+                            ->reactive() // Membuat field ini interaktif
+                            ->helperText(function ($get, $record) {
+                                $rol = (int) $get('jumlah_rol') ?? 0;
+                                $yardPerRol = $record->length ?? 0; // Kolom 'length' di tabel inventory Anda
+                                $totalYard = $rol * $yardPerRol;
+                                
+                                $stokTersisa = $record->stock;
+                                
+                                if ($rol <= 0) {
+                                    return "Stok tersedia: {$stokTersisa} Rol";
+                                }
+
+                                return "Stok tersedia: {$stokTersisa} Rol. Anda memilih {$rol} Rol x {$yardPerRol} Yard = {$totalYard} Yard.";
+                            }),
+                    ])
+                    ->action(function ($data, $record) {
+                        // HITUNG TOTAL QUANTITY (PCS perkiraan atau Yard)
+                        $totalYardUsed = $data['jumlah_rol'] * $record->length;
+
+                        // 1. Simpan ke Tabel Orders
+                        \App\Models\Order::create([
+                            'order_number' => 'FAST-' . now()->format('ymd-His'),
+                            'agency_name'  => 'INTERNAL GUDANG',
+                            'client_name'  => $record->color,
+                            'phone'        => 0, 
+                            'deadline'     => null,
+                            'product_name' => $data['model_baju'] . " (" . $record->name . ")",
+                            'quantity'     => 0, // Mengisi kolom quantity
+                            'qty_roll'     => $data['jumlah_rol'],
+                            'status'       => 'Cutting',
+                            'is_stock_production' => true,
+                            'inventory_id' => $record->id,
+                        ]);
+
+                        // 2. Potong Stok di Inventory
+                        $record->decrement('stock', $data['jumlah_rol']);
+
+                        Notification::make()
+                            ->title('Berhasil!')
+                            ->body('Pesanan Fast Track telah dibuat dan stok telah dipotong.')
+                            ->success()
+                            ->send();
+                    })
             ])
             ->bulkActions([
             ])

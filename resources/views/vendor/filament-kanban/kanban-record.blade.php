@@ -34,6 +34,47 @@
     } elseif ($record->status === 'QC/Packing' && $user->hasRole('QC/Packing')) {
         $canAction = true;
     }
+
+    
+    $inv = $record->inventory_id ? \App\Models\Inventory::find($record->inventory_id) : null;
+    // 1. Ambil Log Tahap Cutting (Sumber data bahan baku)
+    $cuttingLog = $record->productionLogs()->where('stage', 'Cutting')->first();
+    $logDetails = $cuttingLog ? $cuttingLog->notes : null;
+
+    preg_match('/Model:\s*(.*?)\s*\|/', $logDetails, $modelMatch);
+    $displayModel = $modelMatch[1] ?? $record->product_name;
+
+    //Ambil Detail Bahan (Kain, Warna, Rol)
+    preg_match('/Kain:\s*(.*?)\s*\|/', $logDetails, $kainMatch);
+    preg_match('/Warna:\s*(.*?)\s*\|/', $logDetails, $warnaMatch);
+    preg_match('/Rol:\s*(.*?)\s*(?:\||SIZES_DATA)/', $logDetails, $rolMatch);
+
+    $kain = $kainMatch[1] ?? null;
+    $warna = $warnaMatch[1] ?? null;
+    $rolInfo = $rolMatch[1] ?? null;
+
+    // Ambil dan Decode SIZES_DATA (JSON)
+    $sizes = [];
+    if (str_contains($logDetails, 'SIZES_DATA:')) {
+        $jsonPart = explode('SIZES_DATA:', $logDetails)[1];
+        $sizes = json_decode(trim($jsonPart), true) ?? [];
+    }
+    
+    // 2. Ambil Log Tahap Aktif (Untuk Nama Penjahit/Petugas saat ini)
+    $activeLog = $record->productionLogs()
+    ->where('stage', $record->status)
+    ->where('status', 'Sedang Diproses')
+    ->first();
+    
+    $isOtherUserProcessing = $activeLog && $activeLog->employee_id != $user->employee_id;
+    $isOwner = $activeLog && $activeLog->employee_id == $user->employee_id;
+    $handlerName = $activeLog?->employee?->name ?? 'Belum Ada';
+
+    // 3. Parsing Model Baju agar tidak tampil product_name mentah
+    $displayModel = $record->product_name;
+    if ($logDetails && preg_match('/Model:\s*(.*?)\s*\|/', $logDetails, $matches)) {
+        $displayModel = $matches[1];
+    }
 @endphp
 
 <div
@@ -62,18 +103,23 @@
                 <x-heroicon-o-information-circle class="w-4 h-4" />
             </span>
         </div>
-        <div class="text-right">
-            <p class="text-[9px] text-gray-500 font-bold uppercase tracking-tighter leading-none">Deadline</p>
-            <p class="text-[9px] font-extrabold text-gray-700">
-                {{ \Carbon\Carbon::parse($record->deadline)->format('d M Y') }}
-            </p>
-        </div>
+        @if(!$record->is_stock_production && $record->deadline)
+            <div class="text-right">
+                <p class="text-[9px] text-gray-400 dark:bg-gray-400 uppercase font-bold">Deadline</p>
+                <p class="text-[10px] font-bold text-gray-700 dark:text-gray-500">{{ \Carbon\Carbon::parse($record->deadline)->format('d M Y') }}</p>
+            </div>
+        @elseif($record->is_stock_production)
+            <div class="text-right">
+                <span class="font-bold px-2 py-0.5 rounded-full"
+                style="color: #059669; background-color: #ecfdf5; font-size: 12px;">FAST TRACK</span>
+            </div>
+        @endif
     </div>
 
     {{-- Info Utama --}}
-    <div class="mb-4 cursor-pointer"
+    <div class="mt-1 mb-4 cursor-pointer"
         wire:click="mountAction('viewOrderDetails', {recordId: {{ $realId }}})">
-        <div class="text-[10px] font-bold text-gray-800 dark:text-gray-800 uppercase tracking-tight mb-0.5">
+        <div class="text-[10px] font-bold text-gray-800 dark:text-gray-800 uppercase tracking-tight mb-1">
             {{ $record->agency_name }}
         </div>
         <h4 class="text-sm font-black text-gray-600 leading-tight">{{ $record->product_name }}</h4>
@@ -89,13 +135,19 @@
             'Done'       => 100,
             default      => 0,
         };
-        $barColor = match ($record->status) {
-            'Cutting'    => '#EAB308', 
-            'Sewing'     => '#0EA5E9', 
-            'QC/Packing' => '#A855F7', 
-            'Done'       => '#10B981', 
-            default      => '#D1D5DB',
-        };
+        if ($record->is_stock_production) {
+            // Warna Hijau Emerald khusus Jalur Cepat
+            $barColor = '#10B981'; 
+        } else {
+            // Warna asli bawaan kode Anda
+            $barColor = match ($record->status) {
+                'Cutting'    => '#EAB308', 
+                'Sewing'     => '#0EA5E9', 
+                'QC/Packing' => '#A855F7', 
+                'Done'       => '#10B981', 
+                default      => '#D1D5DB',
+            };
+        }
     @endphp
     <div class="space-y-1.5 mb-4">
         <div class="flex justify-between items-center text-[9px] font-bold">
@@ -135,6 +187,94 @@
         </div>
     @endif
 
+    {{-- 3. Collapsible Summary (Dropdown) --}}
+    @if(in_array($record->status, ['Cutting','Sewing', 'QC/Packing', 'Done']))
+        <div x-data="{ open: false }" class="mb-4">
+            <button @click="open = !open" 
+                    class="w-full flex justify-between items-center py-2 px-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-100 transition-colors">
+                <span class="text-[10px] font-black text-gray-500 uppercase">Detail Produksi & Bahan</span>
+                <x-heroicon-m-chevron-down class="w-3 h-3 text-gray-400 transition-transform" ::class="open ? 'rotate-180' : ''" />
+            </button>
+
+            <div x-show="open" x-collapse x-cloak class="mt-2 p-3 bg-white border border-dashed border-gray-200 rounded-xl space-y-3">
+                @if(!$logDetails)
+                    <div class="py-4 flex flex-col items-center justify-center text-center">
+                        <x-heroicon-o-document-magnifying-glass class="w-8 h-8 text-gray-300 mb-2" />
+                        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Belum ada data produksi</p>
+                        <p class="text-[9px] text-gray-400 italic">Detail akan muncul setelah proses Cutting dimulai.</p>
+                    </div>
+                @else
+                    {{-- 1. INFO PETUGAS & MODEL BAJU  --}}
+                    @if(in_array($record->status, ['Sewing', 'QC/Packing']))
+                        <div class="flex items-start gap-2">
+                            <x-heroicon-s-user-circle class="w-5 h-5 text-primary-500 mt-0.5" />
+                            <div>
+                                <p class="text-[9px] text-gray-800 dark:text-gray-700 uppercase font-bold leading-none">Petugas:</p>
+                                <p class="text-[11px] font-black text-gray-700 dark:text-gray-500 ">{{ $handlerName ?? 'N/A' }}</p>
+                            </div>
+                        </div>
+
+                        {{-- Baris Model Baju --}}
+                        <div class="flex items-start gap-2">
+                            <x-heroicon-s-tag class="w-5 h-5 mt-0.5" style="color: #059669;"/>
+                            <div class="flex-1">
+                                <p class="text-[8px] text-gray-800 dark:text-gray-700 uppercase font-black">Model Baju :</p>
+                                <p class="text-[11px] font-black text-gray-700 dark:text-gray-500 uppercase tracking-tight">{{ $displayModel }}</p>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- 2. DETAI BAHAN BAKU--}}
+                    <div class="space-y-2">
+                        {{-- Detail Kain & Warna --}}
+                        @if($kain || $warna)
+                            <div class="ml-6 space-y-1">
+                                <div class="flex justify-between text-[10px] border-t border-gray-100 pb-0.5">
+                                    <span class="text-gray-600 font-bold">Kain:</span>
+                                    <span class="font-bold text-gray-800 dark:text-gray-800 ">{{ $kain ?? '-' }}</span>
+                                </div>
+                                <div class="flex justify-between text-[10px] border-b border-gray-100 pb-0.5">
+                                    <span class="text-gray-600 font-bold">Warna:</span>
+                                    <span class="font-bold text-gray-800 dark:text-gray-800">{{ $warna ?? '-' }}</span>
+                                </div>
+                            </div>
+                        @endif
+
+                        {{-- Info Rol & Yard --}}
+                        @if($rolInfo)
+                            <div class="ml-6 p-1.5 rounded border mt-1" style="background-color: #d1fae5; border-color: #a7f3d0;">
+                                <p class="text-[9px font-bold text-center italic leading-tight" style="color: #059669;">
+                                    {{ $rolInfo }}
+                                </p>
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- 3. HASIL POTONGAN (SIZE BADGES) --}}
+                    @if(!empty($sizes))
+                        <div class="pt-2 border-t border-gray-100">
+                            <p class="text-[8px] text-gray-600 uppercase font-black mb-2 flex items-center gap-1">
+                                <x-heroicon-s-scissors class="w-3 h-3" /> Hasil Potongan
+                            </p>
+                            <div class="flex flex-wrap gap-1.5">
+                                @foreach($sizes as $s)
+                                    <div class="flex items-center shadow-sm rounded overflow-hidden">
+                                        <span class="text-white text-[9px] font-black px-1.5 py-0.5 border" style="background: #334155; border-color: #334155;">
+                                            {{ $s['size'] }}
+                                        </span>
+                                        <span class="text-gray-700 dark:text-gray-700 text-[9px] font-bold px-1.5 py-0.5 border border-l-0" style="background: #cdd1d4; border-color: #334155;">
+                                            {{ $s['qty'] }}
+                                        </span>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+                @endif
+            </div>  
+        </div>
+    @endif
+
     {{-- Footer --}}
     <div class="flex justify-between items-center pt-3 pb-3 border-t border-gray-50">
         <div class="flex items-center gap-2">
@@ -147,7 +287,7 @@
         </div>
         <div class="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded-full border border-slate-100">
             <span class="text-[6px] font-bold dark:text-gray-500 text-slate-500 uppercase">
-                {{ Str::limit($record->client_name, 12) }}
+                {{ $record->is_stock_production ? 'Warna: ' . $record->client_name : Str::limit($record->client_name, 12) }}
             </span>
         </div>
     </div>
@@ -172,7 +312,8 @@
                 <button wire:click="mountAction('selesaiTotalAction', {recordId: {{ $realId }}})"
                 wire:loading.attr="disabled"
                         class="w-full text-white text-[8px] font-bold py-1.5 px-3 rounded-lg flex items-center justify-center gap-2 shadow-sm transition hover:brightness-90 uppercase"
-                        style="background-color: #05b47d;"> ARSIPKAN / REPEAT ORDER 
+                        style="background-color: #05b47d;"> 
+                        {{ $record->is_stock_production ? 'SELESAI & ARSIPKAN' : 'ARSIPKAN / REPEAT ORDER' }}
                 </button>
             @endif
 
@@ -197,27 +338,39 @@
                     </button>
                 @else
                     <div class="flex flex-col gap-2">
-                        <div class="flex items-center justify-center gap-1.5 py-1 px-3 border rounded-md" style="border-color: #fcecab; background-color: #fffbeb;">
-                            <span class="text-[8px] font-black uppercase italic" style="color: #f59e0b;">Sedang {{ $actionLabel ?? $record->status }}</span>
+                        {{-- Label Status --}}
+                        <div class="flex items-center justify-center gap-2 py-1 px-3 border rounded-md" style="border-color: #fcecab; background-color: #fffbeb;">
+                            <span class="text-[8px] font-black uppercase" style="color: #f59e0b;">
+                                Sedang {{ $actionLabel ?? $record->status }} 
+                            </span>
+                            <span class="text-[8px] font-bold text-gray-500">Oleh: {{ Str::limit($handlerName, 13) }}</span>
                         </div>
                         
-                        @if(in_array($record->status, ['Sewing', 'QC/Packing']))
-                            {{-- PENTING: Untuk cicilHasil, kita kirim ID MENTAH (bisa string shadow) agar PHP bisa membedakan stage-nya --}}
-                            <button wire:click="mountAction('cicilHasil', {recordId: '{{ $record->id }}'})"
+                        {{-- TOMBOL AKSI: Hanya muncul JIKA User adalah OWNER kartu ini --}}
+                        @if($isOwner || $user->hasAnyRole(['Owner', 'Admin']))
+                            @if(in_array($record->status, ['Sewing', 'QC/Packing']))
+                                <button wire:click="mountAction('cicilHasil', {recordId: '{{ $record->id }}'})"
+                                        class="w-full text-[9px] font-bold py-1.5 px-3 rounded-lg flex items-center justify-center text-white shadow-md gap-2" 
+                                        style="background-color: #0ea5e9;">
+                                    <x-heroicon-s-plus-circle class="w-3.5 h-3.5"/> CICIL HASIL
+                                </button>
+                            @endif
+                            @php
+                                $finishAction = ($record->status === 'Cutting') ? 'finishCutting' : 'finishStage';
+                                $idAksi = $realId ?? $record->id;
+                            @endphp
+                            <button wire:click="mountAction('{{ $finishAction }}', { record: '{{ $idAksi }}' })"
                                     wire:loading.attr="disabled"
-                                    class="w-full text-[9px] font-bold py-1.5 px-3 rounded-lg flex items-center justify-center text-white shadow-md gap-2" 
-                                    style="background-color: #0ea5e9;">
-                                <x-heroicon-s-plus-circle class="w-3.5 h-3.5"/> CICIL HASIL
+                                    class="w-full text-[9px] font-bold py-1.5 px-3 rounded-lg flex items-center justify-center text-white shadow-md gap-2 hover:bg-[#047857]" 
+                                    style="background-color: #05b47d;">
+                                <x-heroicon-s-check-circle class="w-3.5 h-3.5"/> SELESAI TAHAP INI
                             </button>
+                        @else
+                            {{-- Tampilan untuk Penjahit Lain --}}
+                            <div class="w-full py-2 px-3 bg-gray-100 rounded-lg text-center border border-gray-200">
+                                <p class="text-[9px] font-bold text-gray-400 italic">Dikerjakan oleh {{ $handlerName }}</p>
+                            </div>
                         @endif
-                        @php
-                            $actionName = ($record->status == 'Cutting') ? 'finishCutting' : 'finishStage';
-                        @endphp
-                        <button wire:click="mountAction('{{ $actionName }}', {recordId: {{ $realId }}})"
-                            wire:loading.attr="disabled"
-                            class="w-full text-[9px] font-bold py-1.5 px-3 rounded-lg flex items-center justify-center text-white shadow-md gap-2 hover:bg-[#047857]" style="background-color: #05b47d;">
-                            <x-heroicon-s-check-circle class="w-3.5 h-3.5"/> SELESAI TAHAP INI
-                        </button>
                     </div>
                 @endif
             @endif

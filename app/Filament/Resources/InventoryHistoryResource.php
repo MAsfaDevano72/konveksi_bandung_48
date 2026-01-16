@@ -156,6 +156,6 @@ class InventoryHistoryResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()->hasAnyRole(['Admin', 'Owner']);
+        return auth()->user()->hasAnyRole(['Admin', 'Owner', 'Gudang']);
     }
 }

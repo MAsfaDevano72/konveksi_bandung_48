@@ -52,6 +52,7 @@ class EmployeeResource extends Resource
                         'Cutting' => 'Cutting',
                         'Tailor' => 'Tailor',
                         'QC/Packing' => 'QC/Packing',
+                        'Gudang' => 'Gudang',
                     ])
                     ->required(),
                 Forms\Components\Textarea::make('address')

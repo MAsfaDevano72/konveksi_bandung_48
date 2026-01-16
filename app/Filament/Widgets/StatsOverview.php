@@ -23,70 +23,74 @@ class StatsOverview extends BaseWidget
 
     public static function canView(): bool
     {
-        return Auth::user()->hasAnyRole(['Admin', 'Owner', 'Tailor', 'Cutting', 'QC/Packing']);
+        return Auth::user()->hasAnyRole(['Admin', 'Owner', 'Tailor', 'Cutting', 'QC/Packing', 'Gudang']);
     }
 
     protected function getStats(): array
     {
         $user = Auth::user();
         $isAdminOrOwner = $user->hasAnyRole(['Admin', 'Owner']);
+        $isGudang = $user->hasRole('Gudang');
 
-        $cacheKey = $isAdminOrOwner ? 'dashboard_stats_admin' : 'dashboard_stats_general';
+        // Menentukan apakah user berhak melihat data gudang (Admin, Owner, atau Gudang)
+        $hasWarehouseAccess = $isAdminOrOwner || $isGudang;
 
-        $data = Cache::remember($cacheKey, 3600, function () use ($isAdminOrOwner) {
+        $cacheKey = "dashboard_stats_" . $user->roles->first()->name;
+
+        $data = Cache::remember($cacheKey, 3600, function () use ($isAdminOrOwner, $hasWarehouseAccess) {
             return [
                 'totalOrders' => Order::count(),
                 'inProcess' => Order::whereNotIn('status', ['Waiting', 'Done'])->count(),
                 'doneOrders' => Order::where('status', 'Done')->count(),
-                'lowStock' => $isAdminOrOwner ? Inventory::whereRaw('stock <= min_stock')->count() : 0,
-                'totalItems' => $isAdminOrOwner ? Inventory::count() : 0,
-                'inventoryValue' => $isAdminOrOwner ? (Inventory::query()->selectRaw('SUM(stock * price) as total_value')->value('total_value') ?? 0) : 0,
+                'lowStock' => $hasWarehouseAccess ? Inventory::whereRaw('stock <= min_stock')->count() : 0,
+                'totalItems' => $hasWarehouseAccess ? Inventory::count() : 0,
+                'inventoryValue' => $hasWarehouseAccess ? (Inventory::query()->selectRaw('SUM(stock * price) as total_value')->value('total_value') ?? 0) : 0,
             ];
-        }); 
+        });
 
-            // Stats yang bisa dilihat semua orang (Produksi)
-            $stats = [
-                Stat::make('Total Pesanan', $data['totalOrders'])
-                    ->description('Semua pesanan terdaftar')
-                    ->icon('heroicon-m-clipboard-document-list'),
+        // Membuat array untuk kartu Produksi
+        $productionStats = [
+            Stat::make('Total Pesanan', $data['totalOrders'])
+                ->description('Semua pesanan terdaftar')
+                ->icon('heroicon-m-clipboard-document-list'),
 
-                Stat::make('Dalam Proses', $data['inProcess'])
-                    ->description('Sedang di lantai produksi')
-                    ->color('warning')
-                    ->icon('heroicon-m-arrow-path'),
+            Stat::make('Dalam Proses', $data['inProcess'])
+                ->description('Sedang di lantai produksi')
+                ->color('warning')
+                ->icon('heroicon-m-arrow-path'),
 
-                Stat::make('Pesanan Selesai', $data['doneOrders'])
-                    ->description('Total pesanan sukses')
-                    ->color('success')
-                    ->icon('heroicon-m-check-badge'),
-            ];
+            Stat::make('Pesanan Selesai', $data['doneOrders'])
+                ->description('Total pesanan sukses')
+                ->color('success')
+                ->icon('heroicon-m-check-badge'),
+        ];
 
-            // Stats tambahan hanya untuk Admin & Owner (Keuangan & Gudang)
-            if ($isAdminOrOwner) {
-                $totalInventoryValue = Inventory::query()
-                    ->selectRaw('SUM(stock * price) as total_value')
-                    ->value('total_value') ?? 0;
+        // Membuat array untuk kartu Gudang (extraStats)
+        $warehouseStats = [
+            Stat::make('Stok Menipis', $data['lowStock'])
+                ->description('Bahan baku perlu re-stock')
+                ->color('danger')
+                ->icon('heroicon-m-exclamation-triangle'),
 
-                $extraStats = [
-                    Stat::make('Stok Menipis', $data['lowStock'])
-                        ->description('Bahan baku perlu re-stock')
-                        ->color('danger')
-                        ->icon('heroicon-m-exclamation-triangle'),
+            Stat::make('Total Item Gudang', $data['totalItems'])
+                ->icon('heroicon-m-archive-box')
+                ->description('Jenis bahan baku di gudang'),
 
-                    Stat::make('Total Item Gudang', $data['totalItems'])
-                        ->icon('heroicon-m-archive-box')
-                        ->description('Jenis bahan baku di gudang'),
+            Stat::make('Nilai Inventory', 'Rp ' . number_format($data['inventoryValue'], 0, ',', '.'))
+                ->description('Total aset bahan baku')
+                ->color('primary')
+                ->icon('heroicon-m-banknotes'),
+        ];
 
-                    Stat::make('Nilai Inventory', 'Rp ' . number_format($data['inventoryValue'], 0, ',', '.'))
-                        ->description('Total aset bahan baku')
-                        ->color('primary')
-                        ->icon('heroicon-m-banknotes'),
-                ];
+        // LOGIKA PENGEMBALIAN (RETURN) BERDASARKAN ROLE
+        if ($isGudang) {
+            return $warehouseStats; // Hanya tampilkan kartu gudang
+        }
 
-                // Gabungkan kedua array
-                $stats = array_merge($stats, $extraStats);
-            }
+        if ($isAdminOrOwner) {
+            return array_merge($productionStats, $warehouseStats); // Tampilkan semua
+        }
 
-            return $stats;
+        return $productionStats; // Role lain (Tailor, dll) hanya lihat produksi
     }
 }

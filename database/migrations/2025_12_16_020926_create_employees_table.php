@@ -18,7 +18,7 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->text('address')->nullable();
             $table->date('start_date');
-            $table->enum('job_desk', ['Owner', 'Admin', 'Cutting', 'Tailor', 'QC/Packing']); // Pos Kerja/Job Desk
+            $table->enum('job_desk', ['Owner', 'Admin', 'Cutting', 'Tailor', 'QC/Packing', 'Gudang']); // Pos Kerja/Job Desk
             $table->enum('status', ['active', 'inactive'])->default('active');
             $table->timestamps();
         });

@@ -64,6 +64,6 @@ class LowStockAlert extends BaseWidget
 
     public static function canView(): bool
     {
-        return auth()->user()->hasAnyRole(['Admin', 'Owner']);
+        return auth()->user()->hasAnyRole(['Admin', 'Owner', 'Gudang']);
     }
 }

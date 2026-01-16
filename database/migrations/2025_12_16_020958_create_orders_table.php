@@ -16,12 +16,14 @@ return new class extends Migration
             $table->string('order_number')->unique(); //No. SPK
             $table->string('agency_name'); //Nama Instansi
             $table->string('client_name')->nullable();
-            $table->string('phone');
+            $table->string('phone')->nullable();
             $table->string('product_name');
-            $table->integer('quantity');
-            $table->date('deadline');
+            $table->integer('quantity')->nullable();
+            $table->integer('qty_roll')->nullable()->default(0);
+            $table->date('deadline')->nullable();
             $table->enum('status', ['Waiting', 'Cutting', 'Sewing', 'QC/Packing', 'Done'])->default('Waiting');
             $table->boolean('is_completed')->default(false);
+            $table->boolean('is_stock_production')->default(false);
             $table->timestamps();
         });
     }

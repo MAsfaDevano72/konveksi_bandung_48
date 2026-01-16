@@ -34,6 +34,7 @@ class RoleRateResource extends Resource
                         'Tailor' => 'Tailor (Penjahit)',
                         'Cutting' => 'Cutting (Pemotong)',
                         'QC/Packing' => 'QC/Packing',
+                        'Gudang' => 'Gudang (Admin Gudang)',
                     ])
                     ->unique(ignoreRecord: true)
                     ->required(),

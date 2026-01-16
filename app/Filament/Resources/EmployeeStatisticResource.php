@@ -104,6 +104,6 @@ class EmployeeStatisticResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->user()->hasAnyRole(['owner', 'admin']);
+        return auth()->user()->hasAnyRole(['Owner', 'Admin']);
     }
 }
