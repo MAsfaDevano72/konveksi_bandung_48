@@ -213,23 +213,24 @@
                                 <p class="text-[11px] font-black text-gray-700 dark:text-gray-500 ">{{ $handlerName ?? 'N/A' }}</p>
                             </div>
                         </div>
+                    @endif
 
+                    {{-- 2. DETAI BAHAN BAKU--}}
+                    <div class="space-y-2">
+                        
                         {{-- Baris Model Baju --}}
-                        <div class="flex items-start gap-2">
+                        <div class="flex items-start gap-2 border-t border-gray-100">
                             <x-heroicon-s-tag class="w-5 h-5 mt-0.5" style="color: #059669;"/>
                             <div class="flex-1">
                                 <p class="text-[8px] text-gray-800 dark:text-gray-700 uppercase font-black">Model Baju :</p>
                                 <p class="text-[11px] font-black text-gray-700 dark:text-gray-500 uppercase tracking-tight">{{ $displayModel }}</p>
                             </div>
                         </div>
-                    @endif
 
-                    {{-- 2. DETAI BAHAN BAKU--}}
-                    <div class="space-y-2">
                         {{-- Detail Kain & Warna --}}
                         @if($kain || $warna)
                             <div class="ml-6 space-y-1">
-                                <div class="flex justify-between text-[10px] border-t border-gray-100 pb-0.5">
+                                <div class="flex justify-between text-[10px]  pb-0.5">
                                     <span class="text-gray-600 font-bold">Kain:</span>
                                     <span class="font-bold text-gray-800 dark:text-gray-800 ">{{ $kain ?? '-' }}</span>
                                 </div>
