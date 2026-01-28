@@ -28,62 +28,58 @@ class ListInventories extends ListRecords
             Actions\Action::make('stok_masuk')
                 ->label('Barang Masuk')
                 ->icon('heroicon-o-arrow-down-tray')
-                ->color('success') // Warna Hijau
+                ->color('success')
                 ->form([
-                    // 1. Dropdown Pilih Barang
                     Forms\Components\Select::make('inventory_id')
                         ->label('Pilih Bahan Baku')
-                        ->options(\App\Models\Inventory::query()
-                                ->get()
-                                ->mapWithKeys(function ($item) {
-                                    return [$item->id => "{$item->name} - {$item->color}"];
-                                })
-                            ) 
-                        ->searchable() // Agar bisa diketik/dicari
+                        ->options(Inventory::all()->mapWithKeys(fn($item) => [$item->id => "{$item->name} - {$item->color}"]))
+                        ->searchable()
                         ->required()
-                        ->reactive() // Agar bisa mentrigger update tampilan jika perlu
-                        ->helperText('Cari berdasarkan nama bahan.'),
+                        ->reactive() // PENTING: Untuk mendeteksi perubahan tipe
+                        ->afterStateUpdated(fn ($set) => $set('quantity_yard', null)),
                     
-                    // 2. Input Jumlah
-                    Forms\Components\TextInput::make('quantity')
-                        ->label('Jumlah Masuk')
-                        ->numeric()
-                        ->required()
-                        ->minValue(1),
+                    Forms\Components\Grid::make(2)->schema([
+                        Forms\Components\TextInput::make('quantity')
+                            ->label(fn($get) => Inventory::find($get('inventory_id'))?->type === 'Kain' ? 'Jumlah Masuk (Rol)' : 'Jumlah Masuk')
+                            ->numeric()
+                            ->required()
+                            ->minValue(1),
+
+                        Forms\Components\TextInput::make('quantity_yard')
+                            ->label('Total Yard Masuk')
+                            ->numeric()
+                            ->required()
+                            ->suffix('Yard')
+                            // HANYA MUNCUL JIKA TIPE ADALAH KAIN
+                            ->visible(fn ($get) => Inventory::find($get('inventory_id'))?->type === 'Kain'),
+                    ]),
                     
-                    // 3. Catatan
                     Forms\Components\Textarea::make('notes')
                         ->label('Catatan (Opsional)')
-                        ->placeholder('Contoh: Pembelian dari Supplier A')
                         ->rows(2),
                 ])
                 ->action(function (array $data) {
-                    // A. Cari barang berdasarkan ID yang dipilih
                     $inventory = Inventory::find($data['inventory_id']);
 
-                    if (!$inventory) {
-                        Notification::make()->title('Barang tidak ditemukan')->danger()->send();
-                        return;
+                    // Update Stok Rol/Unit
+                    $inventory->increment('stock', $data['quantity']);
+                    
+                    // Update Saldo Yard jika Kain
+                    if ($inventory->type === 'Kain' && isset($data['quantity_yard'])) {
+                        $inventory->increment('length', $data['quantity_yard']);
                     }
 
-                    // B. Update Stok
-                    $inventory->stock += $data['quantity'];
-                    $inventory->save();
-
-                    // C. Catat History
-                    InventoryHistory::create([
-                        'inventory_id' => $inventory->id,
+                    // Catat History
+                    $inventory->histories()->create([
                         'type' => 'Masuk',
                         'quantity' => $data['quantity'],
-                        'notes' => $data['notes'],
+                        'notes' => $data['notes'] . ($inventory->type === 'Kain' ? " (+{$data['quantity_yard']} Yard)" : ""),
                     ]);
 
-                    // D. Notifikasi & Refresh
-                    Notification::make()
-                        ->title('Stok berhasil ditambahkan')
-                        ->success()
-                        ->send();
+                    Notification::make()->title('Stok & Saldo Yard berhasil ditambahkan')->success()->send();
                 }),
+
+            // Tombol Custom "Barang Keluar"
             Actions\Action::make('stockOut')
                 ->label('Barang Keluar')
                 ->icon('heroicon-m-arrow-up-tray')
@@ -91,38 +87,47 @@ class ListInventories extends ListRecords
                 ->form([
                     Forms\Components\Select::make('inventory_id')
                         ->label('Pilih Barang')
-                        ->options(\App\Models\Inventory::query()
-                                ->where('stock', '>', 0) 
-                                ->get()
-                                ->mapWithKeys(function ($item) {
-                                    return [$item->id => "{$item->name} - {$item->color} (Stok: {$item->stock})"];
-                                })
-                            )
+                        ->options(Inventory::where('stock', '>', 0)->get()->mapWithKeys(fn($item) => [$item->id => "{$item->name} - {$item->color} (Stok: {$item->stock} {$item->unit} {$item->length} Yard)"]))
                         ->searchable()
-                        ->required(),
-                    Forms\Components\TextInput::make('quantity')
-                        ->label('Jumlah Keluar')
-                        ->numeric()
-                        ->required(),
+                        ->required()
+                        ->reactive(),
+
+                    Forms\Components\Grid::make(2)->schema([
+                        Forms\Components\TextInput::make('quantity')
+                            ->label('Jumlah Keluar (Rol/Unit)')
+                            ->numeric()
+                            ->required()
+                            ->maxValue(fn($get) => Inventory::find($get('inventory_id'))?->stock),
+
+                        Forms\Components\TextInput::make('quantity_yard')
+                            ->label('Total Yard Keluar')
+                            ->numeric()
+                            ->required()
+                            ->suffix('Yard')
+                            ->visible(fn ($get) => Inventory::find($get('inventory_id'))?->type === 'Kain')
+                            ->maxValue(fn($get) => Inventory::find($get('inventory_id'))?->length),
+                    ]),
+
                     Forms\Components\Textarea::make('notes')
                         ->label('Alasan Keluar')
                         ->placeholder('Contoh: Barang Rusak / Sampel'),
                 ])
                 ->action(function (array $data) {
-                    $item = \App\Models\Inventory::find($data['inventory_id']);
+                    $item = Inventory::find($data['inventory_id']);
                     
-                    if ($item->stock < $data['quantity']) {
-                        \Filament\Notifications\Notification::make()->title('Stok Kurang!')->danger()->send();
-                        return;
-                    }
-
                     $item->decrement('stock', $data['quantity']);
+                    
+                    if ($item->type === 'Kain' && isset($data['quantity_yard'])) {
+                        $item->decrement('length', $data['quantity_yard']);
+                    }
                     
                     $item->histories()->create([
                         'type' => 'Keluar',
                         'quantity' => $data['quantity'],
-                        'notes' => $data['notes'],
+                        'notes' => $data['notes'] . ($item->type === 'Kain' ? " (-{$data['quantity_yard']} Yard)" : ""),
                     ]);
+
+                    Notification::make()->title('Stok berhasil dikurangi')->success()->send();
                 }),
             ];
     }

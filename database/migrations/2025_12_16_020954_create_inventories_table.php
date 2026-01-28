@@ -20,8 +20,8 @@ return new class extends Migration
             $table->float('stock');
             $table->float('length')->nullable();
             $table->enum('unit', ['Kg', 'Meter', 'Pcs', 'Rol', 'Pack']);
-            $table->decimal('price', 10, 2); // Harga Beli Bahan Baku
-            $table->float('min_stock')->default(0); // Stok Minimum
+            $table->decimal('price', 10, 2)->nullable(); // Harga Beli Bahan Baku
+            $table->float('min_stock')->default(0)->nullable(); // Stok Minimum
             $table->boolean('is_active')->default(true);
             $table->timestamps(); // Created_at = Tanggal Barang Masuk
         });

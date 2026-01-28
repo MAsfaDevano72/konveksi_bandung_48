@@ -41,9 +41,10 @@ class OrderResource extends Resource
                     ->schema([
                         Forms\Components\TextInput::make('order_number')
                             ->label('Nomor SPK')
-                            ->default('SPK-' . date('Ymd') . '-' . rand(100, 999))
+                            ->placeholder('Otomatis (Contoh: SPK-' . date('Ymd') . '-001)')
                             ->readonly()
-                            ->required(),
+                            ->dehydrated(false)
+                            ->helperText('Nomor akan dibuat otomatis sesuai urutan ID.'),
                         Forms\Components\TextInput::make('agency_name')
                             ->label('Nama Instansi')
                             ->required(),

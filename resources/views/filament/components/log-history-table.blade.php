@@ -1,3 +1,6 @@
+@php
+    $logs = collect($getState() ?? []);
+@endphp
 <div style="overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px;">
     <table style="width: 100%; text-align: left; font-size: 12px; border-collapse: collapse;">
         <thead>
@@ -9,7 +12,7 @@
             </tr>
         </thead>
         <tbody style="background-color: white;">
-            @forelse($getState() as $log)
+            @forelse($getState() ?? [] as $log)
                 <tr style="border-bottom: 1px solid #f3f4f6;">
                     {{-- Format Waktu: 12 Des 2025, 11:05:01 --}}
                     <td style="padding: 8px 12px; font-weight: 600; white-space: nowrap; color: #2f343d;">

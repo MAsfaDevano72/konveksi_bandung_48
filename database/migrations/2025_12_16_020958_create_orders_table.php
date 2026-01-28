@@ -20,6 +20,7 @@ return new class extends Migration
             $table->string('product_name');
             $table->integer('quantity')->nullable();
             $table->integer('qty_roll')->nullable()->default(0);
+            $table->decimal('used_yard', 10, 2)->nullable();
             $table->date('deadline')->nullable();
             $table->enum('status', ['Waiting', 'Cutting', 'Sewing', 'QC/Packing', 'Done'])->default('Waiting');
             $table->boolean('is_completed')->default(false);

@@ -1,8 +1,8 @@
 @php
     // 1. Logika Identifikasi ID Asli vs ID Bayangan
-    $recordIdString = (string) $record->id;
-    $isShadow = str_contains($recordIdString, 'qcshadow');
-    $realId = str_replace('qcshadow-', '', $recordIdString);
+    $idVal = (int) $record->id;
+    $isShadow = $idVal >= 1000000;
+    $realId = $isShadow ? ($idVal - 1000000) : $idVal;
     
     // Ambil data user & status dasar
     $user = auth()->user();
@@ -38,7 +38,9 @@
     
     $inv = $record->inventory_id ? \App\Models\Inventory::find($record->inventory_id) : null;
     // 1. Ambil Log Tahap Cutting (Sumber data bahan baku)
-    $cuttingLog = $record->productionLogs()->where('stage', 'Cutting')->first();
+    $cuttingLog = \App\Models\ProductionLog::where('order_id', $realId)
+                    ->where('stage', 'Cutting')
+                    ->first();
     $logDetails = $cuttingLog ? $cuttingLog->notes : null;
 
     preg_match('/Model:\s*(.*?)\s*\|/', $logDetails, $modelMatch);
@@ -61,10 +63,10 @@
     }
     
     // 2. Ambil Log Tahap Aktif (Untuk Nama Penjahit/Petugas saat ini)
-    $activeLog = $record->productionLogs()
-    ->where('stage', $record->status)
-    ->where('status', 'Sedang Diproses')
-    ->first();
+    $activeLog = $record->productionLogs()->where('order_id', $realId)
+        ->where('stage', $record->status)
+        ->where('status', 'Sedang Diproses')
+        ->first();
     
     $isOtherUserProcessing = $activeLog && $activeLog->employee_id != $user->employee_id;
     $isOwner = $activeLog && $activeLog->employee_id == $user->employee_id;
@@ -85,8 +87,8 @@
     
     {{-- Penanda Visual Card Bayangan (Hanya muncul jika itu cicilan ke QC) --}}
     @if($isShadow)
-        <div class="absolute top-0 right-0">
-            <div class="bg-indigo-500 text-white text-[7px] font-black px-2 py-0.5 rounded-bl-lg uppercase tracking-widest shadow-sm">
+        <div class="absolute top-0" style="right: 0px;">
+            <div class=" text-white font-black px-2 py-0.5 uppercase shadow-sm" style="background-color: #6366f1; border-bottom-left-radius: 8px; font-size: 9px; letter-spacing: 0.1em;">
                 Setoran Cicilan
             </div>
         </div>
@@ -165,25 +167,46 @@
     {{-- 2. Progress Fisik --}}
     @if(in_array($record->status, ['Sewing', 'QC/Packing']))
         @php
-            $targetStage = $record->status;
-            $displayLabel = $record->status === 'Sewing' ? 'Jahit' : 'QC & Packing';
-            $totalOutput = $record->outputs()->where('stage', $targetStage)->sum('qty') ?? 0;
+            $totalOutput = \App\Models\ProductionOutput::where('order_id', $realId)
+                ->where('stage', $record->status)
+                ->sum('qty') ?? 0;
+
+            $totalSewing = \App\Models\ProductionOutput::where('order_id', $realId)
+                ->where('stage', 'Sewing')
+                ->sum('qty') ?? 0;
+
             $qtyOrder = $record->quantity > 0 ? $record->quantity : 1;
-            $progressPercent = min(($totalOutput / $qtyOrder) * 100, 100);
+
+            if($isShadow) {
+                // Jika bayangan (Kolom QC), bar menunjukkan: Berapa barang yang SUDAH SELESAI dijahit
+                $displayLabel = "Tersedia dari Jahit";
+                $barProgress = min(($totalSewing / $qtyOrder) * 100, 100);
+                $barText = "$totalSewing / $qtyOrder Pcs";
+                $barColorValue = "#6366f1"; 
+            } else {
+                // Jika kartu asli, bar menunjukkan: Progress Tahap Saat Ini
+                $displayLabel = $record->status === 'Sewing' ? 'Hasil Jahit' : 'Hasil QC';
+                $barProgress = min(($totalOutput / $qtyOrder) * 100, 100);
+                $barText = "$totalOutput / $qtyOrder Pcs";
+                $barColorValue = $statusColors['text'];
+            }
         @endphp
 
         <div class="mt-2 mb-4 p-2 bg-gray-50 rounded-xl border border-gray-100">
             <div class="flex justify-between mb-1">
-                <span class="text-[10px] font-bold text-gray-500 uppercase font-mono">Setoran {{ $displayLabel }}:</span>
+                <span class="text-[10px] font-bold text-gray-500 uppercase font-mono">{{ $displayLabel }}:</span>
                 <span class="text-[10px] font-bold {{ $totalOutput >= $record->quantity ? 'text-green-600' : 'text-primary-600' }}">
-                    {{ $totalOutput }} / {{ $record->quantity }} Pcs
+                    {{ $barText }}
                 </span>
             </div>
             <div class="w-full bg-gray-200 rounded-full h-1.5">
                 <div class="h-1.5 rounded-full transition-all duration-500" 
-                        style="width: {{ $progressPercent }}%; background-color: {{ $statusColors['text'] }}">
+                        style="width: {{ $barProgress }}%; background-color: {{ $barColorValue }};">
                 </div>
             </div>
+            @if($isShadow)
+                <p class="text-[8px] text-gray-400 mt-1 italic">* Menunggu sisa jahitan selesai</p>
+            @endif
         </div>
     @endif
 
@@ -296,11 +319,13 @@
     {{-- Logic Tombol Interaktif --}}
     <div class="mt-5 pt-2 border-t border-gray-50">
         @php
-            // Pastikan pengecekan log menggunakan realId
-            $isProcessing = \App\Models\ProductionLog::where('order_id', $realId)
-                            ->where('stage', $record->status)
-                            ->where('status', 'Sedang Diproses')
-                            ->exists();
+            $currentId = $record->id;
+            $currentCardStage = ($currentId >= 1000000) ? 'QC/Packing' : $record->status;
+            
+            $isProcessing = \App\Models\ProductionLog::where('order_id', ($currentId >= 1000000 ? $currentId - 1000000 : $currentId))
+                ->where('stage', $currentCardStage)
+                ->where('status', 'Sedang Diproses')
+                ->exists();
         @endphp
 
         @if($isDone)
@@ -329,7 +354,9 @@
             @else
                 @if(!$isProcessing)
                     @php
-                        $clickAction = $record->status === 'Cutting' ? "mountAction('startCutting', {recordId: {$realId}})" : "startStage({$realId})";
+                        $clickAction = $record->status === 'Cutting' 
+                            ? "mountAction('startCutting', {recordId: {$realId}})" 
+                            : "mountAction('startStage', {recordId: {$record->id}})";
                     @endphp
                     <button wire:click="{{ $clickAction }}" 
                             wire:loading.attr="disabled"
@@ -348,17 +375,20 @@
                         </div>
                         
                         {{-- TOMBOL AKSI: Hanya muncul JIKA User adalah OWNER kartu ini --}}
-                        @if($isOwner || $user->hasAnyRole(['Owner', 'Admin']))
+                        @if($isOwner && !$user->hasAnyRole(['Owner', 'Admin']))
                             @if(in_array($record->status, ['Sewing', 'QC/Packing']))
-                                <button wire:click="mountAction('cicilHasil', {recordId: '{{ $record->id }}'})"
+                                <button wire:click="mountAction('cicilHasil', {recordId: '{{ $id }}'})"
+                                        wire:loading.attr="disabled"
                                         class="w-full text-[9px] font-bold py-1.5 px-3 rounded-lg flex items-center justify-center text-white shadow-md gap-2" 
                                         style="background-color: #0ea5e9;">
                                     <x-heroicon-s-plus-circle class="w-3.5 h-3.5"/> CICIL HASIL
                                 </button>
                             @endif
+                        @endif
+                        @if($isOwner || $user->hasAnyRole(['Owner', 'Admin']))
                             @php
                                 $finishAction = ($record->status === 'Cutting') ? 'finishCutting' : 'finishStage';
-                                $idAksi = $realId ?? $record->id;
+                                $idAksi = $currentId; // Gunakan ID Card agar Livewire tahu card mana yang diupdate
                             @endphp
                             <button wire:click="mountAction('{{ $finishAction }}', { record: '{{ $idAksi }}' })"
                                     wire:loading.attr="disabled"
@@ -367,7 +397,6 @@
                                 <x-heroicon-s-check-circle class="w-3.5 h-3.5"/> SELESAI TAHAP INI
                             </button>
                         @else
-                            {{-- Tampilan untuk Penjahit Lain --}}
                             <div class="w-full py-2 px-3 bg-gray-100 rounded-lg text-center border border-gray-200">
                                 <p class="text-[9px] font-bold text-gray-400 italic">Dikerjakan oleh {{ $handlerName }}</p>
                             </div>

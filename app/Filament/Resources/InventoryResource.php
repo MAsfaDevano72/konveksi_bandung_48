@@ -74,7 +74,7 @@ class InventoryResource extends Resource
                     ->suffix('Yard')
                     ->visible(fn (Forms\Get $get) => $get('type') === 'Kain') 
                     ->required(fn (Forms\Get $get) => $get('type') === 'Kain')
-                    ->helperText('Isi panjang kain per roll jika jenisnya Kain'),
+                    ->helperText('Isi total panjang kain jika jenisnya Kain'),
                 Forms\Components\Select::make('unit')
                     ->label('Satuan')
                     ->options([
@@ -187,61 +187,72 @@ class InventoryResource extends Resource
                     ->icon('heroicon-o-rocket-launch')
                     ->color(fn ($record) => ($record->type === 'Kain' && $record->stock > 0) ? 'success' : 'gray')
                     ->disabled(fn ($record) => $record->stock <= 0 || $record->type !== 'Kain')
-                    ->modalHeading(fn ($record) => "Produksi Langsung: {$record->name} - {$record->color} | Panjang {$record->length} Yard/Rol"  )
+                    ->modalHeading(fn ($record) => "Produksi Langsung: {$record->name} - {$record->color} || Sisa: {$record->stock} Rol  {$record->length} Yard")
                     ->form([
                         Forms\Components\TextInput::make('model_baju')
-                            ->label('Model Baju (Contoh: Kemeja Pria M)')
+                            ->label('Model Baju')
                             ->required()
                             ->placeholder('Masukkan nama model...'),
 
-                        Forms\Components\TextInput::make('jumlah_rol')
-                            ->label('Jumlah Kain Digunakan (Rol)')
-                            ->numeric()
-                            ->required()
-                            ->minValue(1)
-                            ->rules([
-                                fn ($record) => "max:{$record->stock}",
-                            ])
-                            ->reactive() // Membuat field ini interaktif
-                            ->helperText(function ($get, $record) {
-                                $rol = (int) $get('jumlah_rol') ?? 0;
-                                $yardPerRol = $record->length ?? 0; // Kolom 'length' di tabel inventory Anda
-                                $totalYard = $rol * $yardPerRol;
-                                
-                                $stokTersisa = $record->stock;
-                                
-                                if ($rol <= 0) {
-                                    return "Stok tersedia: {$stokTersisa} Rol";
-                                }
+                        Forms\Components\Grid::make(2)->schema([
+                            Forms\Components\TextInput::make('jumlah_rol')
+                                ->label('Jumlah Rol Digunakan')
+                                ->numeric()
+                                ->required()
+                                ->minValue(1)
+                                ->rules([fn ($record) => "max:{$record->stock}"])
+                                ->reactive() 
+                                ->helperText(function ($get, $record) {
+                                    $rol = (int) $get('jumlah_rol') ?? 0;
+                                    
+                                    if ($rol <= 0 ) {
+                                        return "Rol tersedia: {$record->stock} Rol {$record->length} Yard.";
+                                    }
 
-                                return "Stok tersedia: {$stokTersisa} Rol. Anda memilih {$rol} Rol x {$yardPerRol} Yard = {$totalYard} Yard.";
-                            }),
+                                    return "Anda memilih {$rol}.";
+                                }),
+
+                            Forms\Components\TextInput::make('jumlah_yard')
+                                ->label('Total Yard Digunakan')
+                                ->numeric()
+                                ->required()
+                                ->minValue(1)
+                                ->rules([fn ($record) => "max:{$record->length}"]) 
+                                ->suffix('Yard')
+                                ->reactive() 
+                                ->helperText(function ($get, $record) {
+                                    $yard = (int) $get('jumlah_yard') ?? 0;
+                                    
+                                    if ($yard <= 0) {
+                                        return "Tersisa: {$record->length} Yard.";
+                                    }
+
+                                    return "Anda memilih {$yard} Yard.";
+                                }),
+                        ]),
                     ])
                     ->action(function ($data, $record) {
-                        // HITUNG TOTAL QUANTITY (PCS perkiraan atau Yard)
-                        $totalYardUsed = $data['jumlah_rol'] * $record->length;
-
-                        // 1. Simpan ke Tabel Orders
                         \App\Models\Order::create([
                             'order_number' => 'FAST-' . now()->format('ymd-His'),
                             'agency_name'  => 'INTERNAL GUDANG',
                             'client_name'  => $record->color,
                             'phone'        => 0, 
-                            'deadline'     => null,
                             'product_name' => $data['model_baju'] . " (" . $record->name . ")",
-                            'quantity'     => 0, // Mengisi kolom quantity
+                            'quantity'     => 0,
                             'qty_roll'     => $data['jumlah_rol'],
+                            'used_yard'    => $data['jumlah_yard'],
                             'status'       => 'Cutting',
                             'is_stock_production' => true,
                             'inventory_id' => $record->id,
                         ]);
 
-                        // 2. Potong Stok di Inventory
+                        // 2. POTONG STOK (Rol dan Saldo Yard)
                         $record->decrement('stock', $data['jumlah_rol']);
+                        $record->decrement('length', $data['jumlah_yard']); 
 
                         Notification::make()
                             ->title('Berhasil!')
-                            ->body('Pesanan Fast Track telah dibuat dan stok telah dipotong.')
+                            ->body("Stok dipotong: {$data['jumlah_rol']} Rol & {$data['jumlah_yard']} Yard.")
                             ->success()
                             ->send();
                     })

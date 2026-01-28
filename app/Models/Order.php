@@ -18,6 +18,7 @@ class Order extends Model
         'product_name',
         'quantity',
         'qty_roll',
+        'used_yard',
         'deadline',
         'status',
         'is_completed',
@@ -31,6 +32,13 @@ class Order extends Model
             \Illuminate\Support\Facades\Cache::forget('dashboard_stats_admin');
             \Illuminate\Support\Facades\Cache::forget('dashboard_stats_general');
         };
+
+        static::creating(function ($order) {
+            $prefix = $order->is_stock_production ? 'FAST-' : 'SPK-';
+            $lastId = \App\Models\Order::max('id') ?? 0;
+            $nextId = $lastId + 1;
+            $order->order_number = $prefix . now()->format('Ymd') . '-' . str_pad($nextId, 3, '0', STR_PAD_LEFT);
+        });
 
         static::created($clearDashboard);
         static::updated($clearDashboard);
