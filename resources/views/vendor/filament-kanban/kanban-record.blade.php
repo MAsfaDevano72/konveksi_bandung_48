@@ -63,14 +63,18 @@
     }
     
     // 2. Ambil Log Tahap Aktif (Untuk Nama Penjahit/Petugas saat ini)
-    $activeLog = $record->productionLogs()->where('order_id', $realId)
-        ->where('stage', $record->status)
-        ->where('status', 'Sedang Diproses')
-        ->first();
-    
-    $isOtherUserProcessing = $activeLog && $activeLog->employee_id != $user->employee_id;
-    $isOwner = $activeLog && $activeLog->employee_id == $user->employee_id;
-    $handlerName = $activeLog?->employee?->name ?? 'Belum Ada';
+    $activeLogs = \App\Models\ProductionLog::where('order_id', $realId)
+    ->where('stage', ($idVal >= 1000000 ? 'QC/Packing' : $record->status))
+    ->where('status', 'Sedang Diproses')
+    ->with('employee')
+    ->get();
+
+    $isOwner = $activeLogs->pluck('employee_id')->contains($user->employee_id);
+    $isOtherUserProcessing = $activeLogs->count() > 0 && !$isOwner;
+
+    $handlerName = $activeLogs->count() > 0 
+        ? $activeLogs->map(fn($log) => $log->employee?->name)->filter()->unique()->join(' & ') 
+        : 'Belum Ada';
 
     // 3. Parsing Model Baju agar tidak tampil product_name mentah
     $displayModel = $record->product_name;
@@ -228,7 +232,7 @@
                     </div>
                 @else
                     {{-- 1. INFO PETUGAS & MODEL BAJU  --}}
-                    @if(in_array($record->status, ['Sewing', 'QC/Packing']))
+                    @if(in_array($record->status, ['Cutting', 'Sewing', 'QC/Packing']))
                         <div class="flex items-start gap-2">
                             <x-heroicon-s-user-circle class="w-5 h-5 text-primary-500 mt-0.5" />
                             <div>

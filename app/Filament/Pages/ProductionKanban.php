@@ -236,49 +236,54 @@ class ProductionKanban extends KanbanBoard
     public function startStageAction(): Action
     {
         return Action::make('startStage')
-            ->label('Mulai Tahap Jahit')
+            ->label(function(array $arguments) {
+                $recordId = $arguments['recordId'] ?? 0;
+                if ($recordId >= 1000000) return 'Mulai QC & Packing';
+                
+                $record = \App\Models\Order::find($recordId);
+                return ($record && $record->status === 'QC/Packing') ? 'Mulai QC & Packing' : 'Mulai Tahap Jahit';
+            })
             ->mountUsing(function ($form, array $arguments) {
                 $recordId = $arguments['recordId'] ?? null;
-                $realId = $recordId >= 1000000 ? ($recordId - 1000000) : $recordId;
-
                 if ($form) {
                     $form->fill([
                         'record_id' => $recordId,
                         'employee_id' => auth()->user()->hasRole(['Tailor', 'QC/Packing']) ? auth()->user()->employee_id : null,
                     ]);
                 }
-
             })
             ->form(function (array $arguments) {
                 $recordId = $arguments['recordId'] ?? null;
                 if (!$recordId) return [];
 
                 $realId = $recordId >= 1000000 ? ($recordId - 1000000) : $recordId;
-                if (!$recordId || (int)$recordId >= 1000000) {
-                    return [];
-                }
-                
                 $record = \App\Models\Order::find($realId);
 
-                if (!$record || $record->status === 'QC/Packing') {
+                if (!$record) return [];
+
+                // PERBAIKAN LOGIKA DISINI:
+                // Jika ID >= 1jt ATAU status record memang sudah QC/Packing, maka stage = QC/Packing
+                $currentStage = ($recordId >= 1000000 || $record->status === 'QC/Packing') ? 'QC/Packing' : 'Sewing';
+                
+                if (!auth()->user()->hasAnyRole(['Admin', 'Owner'])) {
                     return [];
                 }
 
-                if (!auth()->user()->hasAnyRole(['Admin', 'Owner']) || $record->status !== 'Sewing') {
-                    return [];
-                }
+                $targetJobDesk = ($currentStage === 'Sewing') ? 'Tailor' : 'QC/Packing';
+                $labelSelect = ($currentStage === 'Sewing') ? 'Pilih Penjahit' : 'Pilih Petugas QC';
 
                 return [
                     Forms\Components\Select::make('employee_id')
-                        ->label('Pilih Penjahit')
-                        ->options(function() {
+                        ->label($labelSelect)
+                        ->options(function() use ($targetJobDesk) {
                             return \App\Models\Employee::where('status', 'active')
-                                ->where('job_desk', 'Tailor') 
+                                ->where('job_desk', $targetJobDesk) 
                                 ->pluck('name', 'id');
                         })
                         ->required()
-                        ->placeholder('Pilih penjahit yang bertugas...')
-                        ->helperText("Khusus tahap Jahit, Admin harus memilihkan penjahitnya."),
+                        ->searchable()
+                        ->placeholder("Pilih petugas $targetJobDesk...")
+                        ->helperText("Admin harus menentukan petugas untuk tahap ini."),
                 ];
             })
             ->action(function (array $data, array $arguments) {
@@ -289,32 +294,30 @@ class ProductionKanban extends KanbanBoard
                 if (!$record) return;
 
                 $assignedEmployeeId = $data['employee_id'] ?? auth()->user()->employee_id;
+                
+                $currentStage = ($recordId >= 1000000 || $record->status === 'QC/Packing') ? 'QC/Packing' : $record->status;
 
                 if (!$assignedEmployeeId) {
-                    \Filament\Notifications\Notification::make()
-                        ->title('Gagal')
-                        ->body("Petugas belum ditentukan.")
-                        ->danger()
-                        ->send();
+                    \Filament\Notifications\Notification::make()->title('Gagal')->body("Petugas belum ditentukan.")->danger()->send();
                     return;
                 }
 
                 \App\Models\ProductionLog::create([
                     'order_id' => $record->id,
                     'employee_id' => $assignedEmployeeId,
-                    'stage' => $record->status,
+                    'stage' => $currentStage,
                     'status' => 'Sedang Diproses',
                     'output_qty' => 0,
                     'timestamp' => now(),
                 ]);
 
                 \Filament\Notifications\Notification::make()
-                    ->title("Jahit untuk pesanan $record->order_number Dimulai")
-                    ->body("Dijahit oleh ". Employee::find($assignedEmployeeId)?->name)
+                    ->title("$currentStage untuk pesanan $record->order_number Dimulai")
+                    ->body("Dikerjakan oleh ". \App\Models\Employee::find($assignedEmployeeId)?->name)
                     ->success()
                     ->send();
             });
-    }
+    }   
 
     // 2. Action Selesai Normal (Jahit & QC/Packking)
     public function finishStageAction(): Action
@@ -460,118 +463,92 @@ class ProductionKanban extends KanbanBoard
         return Action::make('startCutting')
             ->mountUsing(function (Forms\ComponentContainer $form, array $arguments) {
                 $record = Order::find($arguments['recordId']);
+                
                 $modelBajuDefault = $record->is_stock_production 
-                ? trim(explode('(', $record->product_name)[0]) 
-                : '';
+                    ? trim(explode('(', $record->product_name)[0]) 
+                    : '';
+
                 $form->fill([
                     'record_id' => $arguments['recordId'],
                     'order_number' => $record?->order_number,
                     'agency_name' => $record?->agency_name,
                     'client_name' => $record?->client_name,
-                    'total_target' => $record?->quantity,
                     'model_baju' => $modelBajuDefault,
                 ]);
             })
             ->label("Input Bahan & Mulai Cutting")
             ->form([
                 Forms\Components\Hidden::make('record_id'),
-                Forms\Components\Section::make('Detail Pesanan')
-                ->compact()
-                ->columns(3)
-                ->schema(function ($get) {
-                    $record = Order::find($get('record_id'));
-                    $isFastTrack = $record?->is_stock_production;
 
-                    return [
-                        Forms\Components\Placeholder::make('order_number')
-                            ->label('No. Order :')
-                            ->content(fn ($get) => $get('order_number')),
-                        Forms\Components\Placeholder::make('agency_name')
-                            ->label('Nama Instansi : ')
-                            ->content(fn ($get) => $get('agency_name')),
-                        Forms\Components\Placeholder::make('client_info')
-                            ->label($isFastTrack ? 'Detail Warna:' : 'Atas Nama:')
-                            ->content($isFastTrack ? "WARNA " . $get('client_name') : $get('client_name')),
+                // --- SEKSI PETUGAS (Fitur Baru) ---
+                Forms\Components\Section::make('Petugas Pelaksana')
+                    ->schema([
+                        Forms\Components\Select::make('employee_ids')
+                            ->label('Pilih Tim Cutting (Max 2 Orang)')
+                            ->options(fn() => \App\Models\Employee::where('status', 'active')
+                                ->where('job_desk', 'Cutting')
+                                ->pluck('name', 'id'))
+                            ->multiple()
+                            ->minItems(1)
+                            ->maxItems(2)
+                            ->required()
+                            ->searchable()
+                            ->visible(fn() => auth()->user()->hasAnyRole(['Admin', 'Owner'])) 
+                            ->helperText('Sesuai SOP, bagian cutting dikerjakan maksimal 2 orang.'),
+                    ]),
+
+                // --- SEKSI DETAIL PESANAN ---
+                Forms\Components\Section::make('Detail Pesanan')
+                    ->compact()
+                    ->columns(3)
+                    ->schema(function ($get) {
+                        $record = Order::find($get('record_id'));
+                        $isFastTrack = $record?->is_stock_production;
+                        return [
+                            Forms\Components\Placeholder::make('order_number')->label('No. Order :')->content(fn ($get) => $get('order_number')),
+                            Forms\Components\Placeholder::make('agency_name')->label('Nama Instansi : ')->content(fn ($get) => $get('agency_name')),
+                            Forms\Components\Placeholder::make('client_info')
+                                ->label($isFastTrack ? 'Detail Warna:' : 'Atas Nama:')
+                                ->content($isFastTrack ? "WARNA " . $get('client_name') : $get('client_name')),
                         ];
                     }),
 
+                // --- SEKSI PEMAKAIAN BAHAN ---
                 Forms\Components\Section::make('Pemakaian Bahan Baku')
                     ->description("Pilih kain dan tentukan model baju.")
                     ->columns(3)
                     ->schema(function ($get) {
                         $record = Order::find($get('record_id'));
                         
+                        // JIKA PESANAN FAST TRACK (Bahan sudah ditentukan di awal)
                         if ($record && $record->is_stock_production) {
                             $inv = \App\Models\Inventory::find($record->inventory_id);
-                            $jmlRolFT = $record->qty_roll ?? 0;
-                            $jmlYardFT = $record->used_yard ?? 0;
-
                             return [
                                 Forms\Components\TextInput::make('model_baju')
                                     ->label('Model Baju / Artikel')
-                                    ->default(explode('(', $record->product_name)[0] ?? '-') 
+                                    ->default(explode('(', $record->product_name)[0] ?? '-')
                                     ->required()
                                     ->columnSpanFull(),
                                 Forms\Components\Placeholder::make('info_bahan')
-                                ->label('Bahan Baku (Gudang)')
-                                ->content(function() use ($inv, $jmlRolFT, $jmlYardFT) {
-                                    if (!$inv) return '-';
-                                    return "Kain: {$inv->name} | Warna: {$inv->color} | Spesifikasi: {$jmlRolFT} Rol {$jmlYardFT} Yard";
-                                })
-                                ->columnSpanFull(),
+                                    ->label('Bahan Baku (Gudang)')
+                                    ->content(fn() => $inv ? "Kain: {$inv->name} | Warna: {$inv->color} | Spesifikasi: {$record->qty_roll} Rol {$record->used_yard} Yard" : '-')
+                                    ->columnSpanFull(),
                                 Forms\Components\Hidden::make('inventory_id')->default($record->inventory_id),
-                                Forms\Components\Hidden::make('qty_roll')->default($jmlRolFT), 
-                                Forms\Components\Hidden::make('used_yard')->default($jmlYardFT), 
+                                Forms\Components\Hidden::make('qty_roll')->default($record->qty_roll), 
+                                Forms\Components\Hidden::make('used_yard')->default($record->used_yard), 
                             ];
                         }
 
-                        // LOGIKA PESANAN BIASA (REGULER)
+                        // JIKA PESANAN REGULER (Pilih bahan manual)
                         return [
-                            Forms\Components\TextInput::make('model_baju')
-                                ->label('Model Baju')
-                                ->placeholder('Contoh: Kaftan Silk, Kebaya Modern, dll')
-                                ->required()
-                                ->columnSpanFull(),
+                            Forms\Components\TextInput::make('model_baju')->label('Model Baju')->placeholder('Contoh: Kaftan Silk')->required()->columnSpanFull(),
                             Forms\Components\Select::make('inventory_id')
                                 ->label('Pilih Kain')
-                                ->options(fn() => \App\Models\Inventory::where('type', 'Kain')
-                                        ->where('stock', '>', 0)
-                                        ->get()
-                                        ->mapWithKeys(function ($item) {
-                                            return [$item->id => "{$item->name} - {$item->color}  || Sisa: {$item->stock} Rol ({$item->length} Yard)"];
-                                        }
-                                ))
-                                ->columnSpanFull()
-                                ->reactive()
-                                ->required(),
-
-                            Forms\Components\TextInput::make('qty_roll')
-                                ->label('Jumlah Rol Digunakan')
-                                ->numeric()
-                                ->required()
-                                ->reactive()
-                                ->minValue(1),
-
-                            Forms\Components\TextInput::make('used_yard')
-                                ->label('Total Yard Digunakan')
-                                ->numeric()
-                                ->required()
-                                ->reactive()
-                                ->minValue(1)
-                                ->helperText('Masukkan total yard yang dipotong dari roll tersebut'),
-                            
-                            Forms\Components\Placeholder::make('summary_bahan')
-                                ->label('Ringkasan Instruksi Bahan:')
-                                ->columnSpanFull()
-                                ->content(function($get) {
-                                    $inv = \App\Models\Inventory::find($get('inventory_id'));
-                                    if(!$get('model_baju') || !$inv) return "Silahkan isi model dan pilih kain...";
-                                    
-                                    $qty = $get('qty_roll') ?? 0;
-                                    $yard = $get('used_yard') ?? 0;
-                                    
-                                    return "Model Baju: {$get('model_baju')} | Kain: {$inv->name} | Warna: {$inv->color} | Rol: {$qty} Rol {$yard} Yard";
-                                }),
+                                ->options(fn() => \App\Models\Inventory::where('type', 'Kain')->where('stock', '>', 0)->get()
+                                    ->mapWithKeys(fn($item) => [$item->id => "{$item->name} - {$item->color} || Sisa: {$item->stock} Rol"]))
+                                ->columnSpanFull()->reactive()->required(),
+                            Forms\Components\TextInput::make('qty_roll')->label('Jumlah Rol')->numeric()->required()->minValue(1),
+                            Forms\Components\TextInput::make('used_yard')->label('Total Yard')->numeric()->required()->minValue(1),
                         ];
                     }),
             ])
@@ -580,77 +557,65 @@ class ProductionKanban extends KanbanBoard
                 $inventoryId = $data['inventory_id'] ?? $record?->inventory_id;
 
                 if (!$inventoryId) {
-                    Notification::make()->title('ID Bahan tidak ditemukan di sistem')->danger()->send();
+                    Notification::make()->title('ID Bahan tidak ditemukan')->danger()->send();
                     return;
                 }
 
                 $lock = Cache::lock("processing_inventory_{$inventoryId}", 10);
-
                 if ($lock->get()) {
                     try {
                         return DB::transaction(function () use ($data, $inventoryId, $record) {
                             $inventory = \App\Models\Inventory::find($inventoryId);
+                            if (!$inventory) return;
 
-                            if (!$inventory) {
-                                Notification::make()->title('Data Kain tidak ditemukan di Database')->danger()->send(); 
-                                return;
-                            }
-
-                            // --- 1. KALKULASI DATA ---
+                            // 1. Kalkulasi Data
                             $jmlRol = $record->is_stock_production ? ($record->qty_roll ?? 0) : ($data['qty_roll'] ?? 0);
                             $jmlYard = $record->is_stock_production ? ($record->used_yard ?? 0) : ($data['used_yard'] ?? 0);
                             $modelBaju = $data['model_baju'] ?? '-';
 
-                            // --- 2. UPDATE DATA PRODUK & STOK ---
+                            // 2. Update Stok & History (Logika Inti Kode Lama)
                             if ($record->is_stock_production) {
-                                $record->update([
-                                    'product_name' => $modelBaju . " (" . $inventory->name . ")",
-                                ]);
-                                
-                                $logNotes = "FAST TRACK - Model: {$modelBaju} | Kain: {$inventory->name} | Warna: {$inventory->color} | Rol: {$jmlRol} Rol {$jmlYard} Yard";
+                                // Update nama produk agar spesifik (Kode Lama)
+                                $record->update(['product_name' => $modelBaju . " (" . $inventory->name . ")"]);
                             } else {
-                                if ($jmlRol > $inventory->stock || $jmlYard > $inventory->length) {
-                                    Notification::make()->title('Stok atau Yard Tidak Cukup!')->danger()->send(); 
+                                // Validasi stok cukup
+                                if ($jmlRol > $inventory->stock) {
+                                    Notification::make()->title('Stok Tidak Cukup!')->danger()->send();
                                     return;
                                 }
+                                
+                                $record->update(['inventory_id' => $inventoryId, 'qty_roll' => $jmlRol, 'used_yard' => $jmlYard]);
+                                
+                                // Kurangi Stok & Buat History Audit (Kode Lama)
+                                $inventory->decrement('stock', $jmlRol);
+                                $inventory->decrement('length', $jmlYard);
 
-                                $record->update([
-                                    'inventory_id' => $inventoryId,
-                                    'qty_roll'     => $jmlRol,
-                                    'used_yard'    => $jmlYard,
+                                \App\Models\InventoryHistory::create([
+                                    'inventory_id' => $inventory->id,
+                                    'type' => 'Terpakai',
+                                    'quantity' => $jmlRol,
+                                    'notes' => "Produksi SPK: {$record->order_number} (Terpakai {$jmlYard} Yard)",
                                 ]);
-
-                                if ($jmlRol > 0) {
-                                    $inventory->decrement('stock', $jmlRol);
-                                    $inventory->decrement('length', $jmlYard);
-                                    
-                                    \App\Models\InventoryHistory::create([
-                                        'inventory_id' => $inventory->id,
-                                        'type' => 'Terpakai',
-                                        'quantity' => $jmlRol,
-                                        'notes' => "Produksi SPK: {$record->order_number} (Terpakai {$jmlYard} Yard)",
-                                    ]);
-                                }
-
-                                $logNotes = "Model: {$modelBaju} | Kain: {$inventory->name} | Warna: {$inventory->color} | Rol: {$jmlRol} Rol {$jmlYard} Yard";
                             }
 
-                            // --- 3. PEMBUATAN PRODUCTION LOG ---
-                            \App\Models\ProductionLog::create([
-                                'order_id' => $record->id,
-                                'employee_id' => auth()->user()->employee_id ?? 1,
-                                'stage' => 'Cutting',
-                                'status' => 'Sedang Diproses',
-                                'notes' => $logNotes,
-                                'timestamp' => now(),
-                            ]);
+                            // 3. Pembuatan Production Log untuk TIM (Fitur Kode Baru)
+                            $logNotes = "Model: {$modelBaju} | Kain: {$inventory->name} | Warna: {$inventory->color} | Rol: {$jmlRol} Rol {$jmlYard} Yard";
+                            $assignedEmployees = $data['employee_ids'] ?? [auth()->user()->employee_id ?? 1];
 
+                            foreach ($assignedEmployees as $empId) {
+                                \App\Models\ProductionLog::create([
+                                    'order_id' => $record->id,
+                                    'employee_id' => $empId,
+                                    'stage' => 'Cutting',
+                                    'status' => 'Sedang Diproses',
+                                    'notes' => $logNotes,
+                                    'timestamp' => now(),
+                                ]);
+                            }
+
+                            // 4. Housekeeping
                             Cache::forget('dashboard_stats_admin');
-                            
-                            Notification::make()
-                                ->title("Cutting untuk pesanan $record->order_number Dimulai")
-                                ->success()
-                                ->send();
+                            Notification::make()->title("Cutting Dimulai oleh ".count($assignedEmployees)." orang")->success()->send();
                         });
                     } finally {
                         $lock->release();
