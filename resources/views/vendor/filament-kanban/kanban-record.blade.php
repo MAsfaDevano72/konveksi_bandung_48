@@ -38,28 +38,29 @@
     
     $inv = $record->inventory_id ? \App\Models\Inventory::find($record->inventory_id) : null;
     // 1. Ambil Log Tahap Cutting (Sumber data bahan baku)
-    $cuttingLog = \App\Models\ProductionLog::where('order_id', $realId)
-                    ->where('stage', 'Cutting')
+    $latestProductionLog = \App\Models\ProductionLog::where('order_id', $realId)
+                    ->whereNotNull('notes')
+                    ->where('notes', 'LIKE', '%Model:%')
+                    ->latest()
                     ->first();
-    $logDetails = $cuttingLog ? $cuttingLog->notes : null;
 
-    preg_match('/Model:\s*(.*?)\s*\|/', $logDetails, $modelMatch);
+    $logDetails = $latestProductionLog ? $latestProductionLog->notes : null;
+
+    preg_match('/Model:\s*(.*?)\s*(?:\||$)/', $logDetails, $modelMatch);
+    preg_match('/Kain:\s*(.*?)\s*(?:\||$)/', $logDetails, $kainMatch);
+    preg_match('/Warna:\s*(.*?)\s*(?:\||$)/', $logDetails, $warnaMatch);
+    preg_match('/Rol:\s*(.*?)\s*(?:\||SIZES_DATA|$)/', $logDetails, $rolMatch);
+
     $displayModel = $modelMatch[1] ?? $record->product_name;
-
-    //Ambil Detail Bahan (Kain, Warna, Rol)
-    preg_match('/Kain:\s*(.*?)\s*\|/', $logDetails, $kainMatch);
-    preg_match('/Warna:\s*(.*?)\s*\|/', $logDetails, $warnaMatch);
-    preg_match('/Rol:\s*(.*?)\s*(?:\||SIZES_DATA)/', $logDetails, $rolMatch);
-
     $kain = $kainMatch[1] ?? null;
     $warna = $warnaMatch[1] ?? null;
     $rolInfo = $rolMatch[1] ?? null;
 
     // Ambil dan Decode SIZES_DATA (JSON)
     $sizes = [];
-    if (str_contains($logDetails, 'SIZES_DATA:')) {
-        $jsonPart = explode('SIZES_DATA:', $logDetails)[1];
-        $sizes = json_decode(trim($jsonPart), true) ?? [];
+    if ($logDetails && str_contains($logDetails, 'SIZES_DATA:')) {
+        $parts = explode('SIZES_DATA:', $logDetails);
+        $sizes = json_decode(trim($parts[1]), true) ?? [];
     }
     
     // 2. Ambil Log Tahap Aktif (Untuk Nama Penjahit/Petugas saat ini)
@@ -101,7 +102,7 @@
     {{-- Top: Badge SPK & Deadline --}}
     <div class="flex justify-between items-start mb-3">
         <div wire:click="mountAction('viewOrderDetails', {recordId: {{ $realId }}})" 
-         class="cursor-pointer hover:underline flex">
+        class="cursor-pointer hover:underline flex">
             <span
                 class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border border-black/5 gap-1"
                 style="background-color: {{ $statusColors['bg'] }}; color: {{ $statusColors['text'] }};">
@@ -381,7 +382,7 @@
                         {{-- TOMBOL AKSI: Hanya muncul JIKA User adalah OWNER kartu ini --}}
                         @if($isOwner && !$user->hasAnyRole(['Owner', 'Admin']))
                             @if(in_array($record->status, ['Sewing', 'QC/Packing']))
-                                <button wire:click="mountAction('cicilHasil', {recordId: '{{ $id }}'})"
+                                <button wire:click="mountAction('cicilHasil', {recordId: '{{ $idVal }}'})"
                                         wire:loading.attr="disabled"
                                         class="w-full text-[9px] font-bold py-1.5 px-3 rounded-lg flex items-center justify-center text-white shadow-md gap-2" 
                                         style="background-color: #0ea5e9;">

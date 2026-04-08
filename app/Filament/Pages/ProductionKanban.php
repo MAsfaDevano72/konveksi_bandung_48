@@ -32,6 +32,7 @@ class ProductionKanban extends KanbanBoard
     protected static ?string $title = 'Tracking Produksi';
     protected static ?string $navigationLabel = 'Tracking Produksi';
     protected static ?string $navigationGroup = 'Produksi';
+    protected static ?string $slug = 'tracking-produksi';
     protected static ?int $navigationSort = 2;
 
     protected static bool $shouldRegisterNavigation = true;
@@ -366,7 +367,6 @@ class ProductionKanban extends KanbanBoard
                         ->default(0)
                         ->helperText('Akan terisi otomatis jika hasil kurang dari target.'),
                 ]),
-                Forms\Components\Textarea::make('notes')->label('Catatan (Opsional)'),
             ])
             
             ->action(function (array $data, Order $record) {
@@ -387,20 +387,29 @@ class ProductionKanban extends KanbanBoard
 
                 // 1. Update Log Tahap Sekarang
                 $lastLog = \App\Models\ProductionLog::where('order_id', $record->id)
-                ->where('stage', $currentStatus)
-                ->whereIn('status', ['Sedang Diproses', 'Mulai'])
-                ->latest()
-                ->first();
+                    ->where('stage', $currentStatus)
+                    ->whereIn('status', ['Sedang Diproses', 'Mulai'])
+                    ->latest()
+                    ->first();
+
+                $workerEmployeeId = $lastLog ? $lastLog->employee_id : (Auth::user()->employee_id ?? Auth::id());
 
                 if ($lastLog) {
                     $lastLog->update([
                         'status' => 'Selesai',
                         'output_qty' => $success,
                         'reject_qty' => $calculatedReject, 
-                        'notes' => $data['notes'],
                         'timestamp' => now(),
                     ]);
                 }
+
+                \App\Models\ProductionOutput::create([
+                    'order_id' => $record->id,
+                    'employee_id' => $workerEmployeeId, 
+                    'stage' => $currentStatus,
+                    'qty' => $success,
+                    'status' => 'Selesai',
+                ]);
 
                 // 2. CEK AGAR TIDAK DOUBLE LOG UNTUK TAHAP BERIKUTNYA
                 if ($nextStatus !== 'Done') {
@@ -457,30 +466,26 @@ class ProductionKanban extends KanbanBoard
         }
     }
 
-    // 4. Action Mulai Cutting (Pilih Bahan & Kurangi Stok)
+    // 4. Action Mulai Cutting (Pilih Petugas, Pilih Bahan & Kurangi Stok)
     public function startCuttingAction(): Action
     {
         return Action::make('startCutting')
             ->mountUsing(function (Forms\ComponentContainer $form, array $arguments) {
                 $record = Order::find($arguments['recordId']);
                 
-                $modelBajuDefault = $record->is_stock_production 
-                    ? trim(explode('(', $record->product_name)[0]) 
-                    : '';
-
                 $form->fill([
                     'record_id' => $arguments['recordId'],
                     'order_number' => $record?->order_number,
                     'agency_name' => $record?->agency_name,
                     'client_name' => $record?->client_name,
-                    'model_baju' => $modelBajuDefault,
+                    'garment_model_id' => $record?->garment_model_id, 
                 ]);
             })
             ->label("Input Bahan & Mulai Cutting")
             ->form([
                 Forms\Components\Hidden::make('record_id'),
 
-                // --- SEKSI PETUGAS (Fitur Baru) ---
+                // --- SEKSI PETUGAS ---
                 Forms\Components\Section::make('Petugas Pelaksana')
                     ->schema([
                         Forms\Components\Select::make('employee_ids')
@@ -493,68 +498,79 @@ class ProductionKanban extends KanbanBoard
                             ->maxItems(2)
                             ->required()
                             ->searchable()
-                            ->visible(fn() => auth()->user()->hasAnyRole(['Admin', 'Owner'])) 
-                            ->helperText('Sesuai SOP, bagian cutting dikerjakan maksimal 2 orang.'),
+                            ->visible(fn() => auth()->user()->hasAnyRole(['Admin', 'Owner', 'Cutting'])),
                     ]),
 
-                // --- SEKSI DETAIL PESANAN ---
-                Forms\Components\Section::make('Detail Pesanan')
-                    ->compact()
-                    ->columns(3)
+                // --- SEKSI PEMAKAIAN BAHAN & MODEL ---
+                Forms\Components\Section::make('Pemakaian Bahan & Model Baju')
+                    ->columns(2)
                     ->schema(function ($get) {
                         $record = Order::find($get('record_id'));
-                        $isFastTrack = $record?->is_stock_production;
-                        return [
-                            Forms\Components\Placeholder::make('order_number')->label('No. Order :')->content(fn ($get) => $get('order_number')),
-                            Forms\Components\Placeholder::make('agency_name')->label('Nama Instansi : ')->content(fn ($get) => $get('agency_name')),
-                            Forms\Components\Placeholder::make('client_info')
-                                ->label($isFastTrack ? 'Detail Warna:' : 'Atas Nama:')
-                                ->content($isFastTrack ? "WARNA " . $get('client_name') : $get('client_name')),
-                        ];
-                    }),
 
-                // --- SEKSI PEMAKAIAN BAHAN ---
-                Forms\Components\Section::make('Pemakaian Bahan Baku')
-                    ->description("Pilih kain dan tentukan model baju.")
-                    ->columns(3)
-                    ->schema(function ($get) {
-                        $record = Order::find($get('record_id'));
-                        
-                        // JIKA PESANAN FAST TRACK (Bahan sudah ditentukan di awal)
-                        if ($record && $record->is_stock_production) {
-                            $inv = \App\Models\Inventory::find($record->inventory_id);
-                            return [
-                                Forms\Components\TextInput::make('model_baju')
-                                    ->label('Model Baju / Artikel')
-                                    ->default(explode('(', $record->product_name)[0] ?? '-')
-                                    ->required()
-                                    ->columnSpanFull(),
-                                Forms\Components\Placeholder::make('info_bahan')
-                                    ->label('Bahan Baku (Gudang)')
-                                    ->content(fn() => $inv ? "Kain: {$inv->name} | Warna: {$inv->color} | Spesifikasi: {$record->qty_roll} Rol {$record->used_yard} Yard" : '-')
-                                    ->columnSpanFull(),
-                                Forms\Components\Hidden::make('inventory_id')->default($record->inventory_id),
-                                Forms\Components\Hidden::make('qty_roll')->default($record->qty_roll), 
-                                Forms\Components\Hidden::make('used_yard')->default($record->used_yard), 
-                            ];
+                        $selectedInventory = null;
+                        if ($get('inventory_id')) {
+                            $selectedInventory = \App\Models\Inventory::find($get('inventory_id'));
                         }
-
-                        // JIKA PESANAN REGULER (Pilih bahan manual)
+                        
                         return [
-                            Forms\Components\TextInput::make('model_baju')->label('Model Baju')->placeholder('Contoh: Kaftan Silk')->required()->columnSpanFull(),
+                            Forms\Components\Select::make('garment_model_id')
+                                ->label('Model Baju (Tarif Penjahit)')
+                                ->options(\App\Models\GarmentModel::pluck('name', 'id'))
+                                ->required()
+                                ->searchable()
+                                ->preload()
+                                ->columnSpanFull()
+                                ->helperText('Pilihan ini menentukan upah jahit per pcs nantinya.'),
+
+                            Forms\Components\Placeholder::make('info_bahan_stok')
+                                ->label('Detail Bahan Baku (Produksi Stok)')
+                                ->content(function () use ($record) {
+                                    if (!$record || !$record->is_stock_production) return null;
+                                    
+                                    return new \Illuminate\Support\HtmlString("
+                                        <div class='p-3 border border-warning-500 bg-warning-500/10 rounded-lg' style='border-color: rgba(245, 158, 13, 1)'>
+                                            <p class='text-md'><strong>Kain:</strong> " . ($record->inventory?->name ?? '-') . "</p>
+                                            <p class='text-md'><strong>Warna:</strong> " . ($record->inventory?->color ?? '-') . "</p>
+                                            <p class='text-md'><strong>Pemakaian:</strong> {$record->qty_roll} Rol / {$record->used_yard} Yard</p>
+                                        </div>
+                                    ");
+                                })
+                                ->visible(fn() => $record?->is_stock_production)
+                                ->columnSpanFull(),
+
+                                
                             Forms\Components\Select::make('inventory_id')
                                 ->label('Pilih Kain')
+                                ->live()
                                 ->options(fn() => \App\Models\Inventory::where('type', 'Kain')->where('stock', '>', 0)->get()
-                                    ->mapWithKeys(fn($item) => [$item->id => "{$item->name} - {$item->color} || Sisa: {$item->stock} Rol"]))
-                                ->columnSpanFull()->reactive()->required(),
-                            Forms\Components\TextInput::make('qty_roll')->label('Jumlah Rol')->numeric()->required()->minValue(1),
-                            Forms\Components\TextInput::make('used_yard')->label('Total Yard')->numeric()->required()->minValue(1),
+                                    ->mapWithKeys(fn($item) => [$item->id => "{$item->name} - {$item->color} || Sisa: {$item->stock} Rol / {$item->length} Yard"]))
+                                ->columnSpanFull()
+                                ->required()
+                                ->hidden(fn() => $record?->is_stock_production),
+
+                            Forms\Components\TextInput::make('qty_roll')
+                                ->label('Jumlah Rol')
+                                ->numeric()
+                                ->required()
+                                ->maxValue(fn() => $selectedInventory?->stock ?? 0)
+                                ->helperText(fn() => $selectedInventory ? "Maksimal: {$selectedInventory->stock} Rol" : "")
+                                ->hidden(fn() => $record?->is_stock_production),        
+
+                            Forms\Components\TextInput::make('used_yard')
+                                ->label('Total Yard')
+                                ->numeric()
+                                ->required()
+                                ->maxValue(fn() => $selectedInventory?->length ?? 0)
+                                ->helperText(fn() => $selectedInventory ? "Maksimal: {$selectedInventory->length} Rol" : "")
+                                ->hidden(fn() => $record?->is_stock_production),
                         ];
                     }),
             ])
             ->action(function (array $data) {
                 $record = Order::find($data['record_id']);
                 $inventoryId = $data['inventory_id'] ?? $record?->inventory_id;
+                
+                $garmentModel = \App\Models\GarmentModel::find($data['garment_model_id']);
 
                 if (!$inventoryId) {
                     Notification::make()->title('ID Bahan tidak ditemukan')->danger()->send();
@@ -564,43 +580,55 @@ class ProductionKanban extends KanbanBoard
                 $lock = Cache::lock("processing_inventory_{$inventoryId}", 10);
                 if ($lock->get()) {
                     try {
-                        return DB::transaction(function () use ($data, $inventoryId, $record) {
+                        return DB::transaction(function () use ($data, $inventoryId, $record, $garmentModel) {
                             $inventory = \App\Models\Inventory::find($inventoryId);
-                            if (!$inventory) return;
-
-                            // 1. Kalkulasi Data
+                            
+                            // 1. Data Pemakaian
                             $jmlRol = $record->is_stock_production ? ($record->qty_roll ?? 0) : ($data['qty_roll'] ?? 0);
                             $jmlYard = $record->is_stock_production ? ($record->used_yard ?? 0) : ($data['used_yard'] ?? 0);
-                            $modelBaju = $data['model_baju'] ?? '-';
 
-                            // 2. Update Stok & History (Logika Inti Kode Lama)
-                            if ($record->is_stock_production) {
-                                // Update nama produk agar spesifik (Kode Lama)
-                                $record->update(['product_name' => $modelBaju . " (" . $inventory->name . ")"]);
-                            } else {
-                                // Validasi stok cukup
-                                if ($jmlRol > $inventory->stock) {
-                                    Notification::make()->title('Stok Tidak Cukup!')->danger()->send();
-                                    return;
+                            if (!$record->is_stock_production) {
+                                if ($inventory->stock < $jmlRol || $inventory->length < $jmlYard) {
+                                    Notification::make()
+                                        ->title('Gagal: Stok tidak mencukupi!')
+                                        ->body("Sisa stok: {$inventory->stock} Rol / {$inventory->length} Yard. Anda mencoba memakai {$jmlRol} Rol / {$jmlYard} Yard.")
+                                        ->danger()
+                                        ->persistent()
+                                        ->send();
+                                    
+                                    return; 
                                 }
-                                
-                                $record->update(['inventory_id' => $inventoryId, 'qty_roll' => $jmlRol, 'used_yard' => $jmlYard]);
-                                
-                                // Kurangi Stok & Buat History Audit (Kode Lama)
+                            }
+
+                            // 2. Update Order (Simpan Model ID-nya)
+                            $record->update([
+                                'garment_model_id' => $data['garment_model_id'],
+                                'product_name' => $record->product_name,
+                                'inventory_id' => $inventoryId,
+                                'qty_roll' => $jmlRol,
+                                'used_yard' => $jmlYard
+                            ]);
+
+                            // 3. Potong Stok & History
+                            if (!$record->is_stock_production) {
                                 $inventory->decrement('stock', $jmlRol);
                                 $inventory->decrement('length', $jmlYard);
-
+                                
                                 \App\Models\InventoryHistory::create([
                                     'inventory_id' => $inventory->id,
                                     'type' => 'Terpakai',
                                     'quantity' => $jmlRol,
-                                    'notes' => "Produksi SPK: {$record->order_number} (Terpakai {$jmlYard} Yard)",
+                                    'notes' => "Cutting SPK: {$record->order_number} ({$garmentModel->name})",
                                 ]);
                             }
 
-                            // 3. Pembuatan Production Log untuk TIM (Fitur Kode Baru)
-                            $logNotes = "Model: {$modelBaju} | Kain: {$inventory->name} | Warna: {$inventory->color} | Rol: {$jmlRol} Rol {$jmlYard} Yard";
-                            $assignedEmployees = $data['employee_ids'] ?? [auth()->user()->employee_id ?? 1];
+                            // 4. Buat Log Tim
+                            $assignedEmployees = $data['employee_ids'] ?? [auth()->user()->employee_id];
+
+                            $fullStartNotes = "Model: " . ($garmentModel->name ?? '-') . 
+                                            " | Kain: " . ($inventory->name ?? '-') . 
+                                            " | Warna: " . ($inventory->color ?? '-') . 
+                                            " | Rol: {$jmlRol} Rol {$jmlYard} Yard";
 
                             foreach ($assignedEmployees as $empId) {
                                 \App\Models\ProductionLog::create([
@@ -608,14 +636,13 @@ class ProductionKanban extends KanbanBoard
                                     'employee_id' => $empId,
                                     'stage' => 'Cutting',
                                     'status' => 'Sedang Diproses',
-                                    'notes' => $logNotes,
+                                    'notes' => $fullStartNotes,
                                     'timestamp' => now(),
                                 ]);
                             }
 
-                            // 4. Housekeeping
                             Cache::forget('dashboard_stats_admin');
-                            Notification::make()->title("Cutting Dimulai oleh ".count($assignedEmployees)." orang")->success()->send();
+                            Notification::make()->title("Cutting Dimulai!")->success()->send();
                         });
                     } finally {
                         $lock->release();
@@ -635,7 +662,6 @@ class ProductionKanban extends KanbanBoard
                     ['size' => 'S',   'qty' => 0],
                     ['size' => 'M',   'qty' => 0],
                     ['size' => 'L',   'qty' => 0],
-                    ['size' => 'XL',  'qty' => 0],
                 ];
 
                 $form->fill([
@@ -679,7 +705,7 @@ class ProductionKanban extends KanbanBoard
                     ->label('Input Hasil Potongan Per Size')
                     ->schema([
                         Forms\Components\Select::make('size')
-                            ->options(['S' => 'S', 'M' => 'M', 'L' => 'L', 'XL' => 'XL', 'XXL' => 'XXL'])
+                            ->options(['S' => 'S', 'M' => 'M', 'L' => 'L', 'XL' => 'XL', 'XXL' => 'XXL', '134' => '134', '140' => '140', '145' => '145'])
                             ->required(), 
                         Forms\Components\TextInput::make('qty')
                             ->label('Jumlah (Pcs)')
@@ -718,28 +744,49 @@ class ProductionKanban extends KanbanBoard
                     $record->update(['quantity' => $totalOutput]);
                 }
 
-                $log = ProductionLog::where('order_id', $record->id)
+                $activeLogs = ProductionLog::where('order_id', $record->id)
                     ->where('stage', 'Cutting')
                     ->where('status', 'Sedang Diproses')
-                    ->first();
+                    ->get();
 
-                if ($log) {
-                    $log->update([
-                        'status' => 'Selesai',
-                        'output_qty' => $totalOutput,
-                        'notes' => $log->notes . " | SIZES_DATA:" . json_encode($validSizes),
+                $sampleLog = $activeLogs->first();
+
+                $workerEmployeeId = $sampleLog ? $sampleLog->employee_id : (Auth::user()->employee_id ?? 1);
+
+                if ($activeLogs->count() > 0) {
+                    foreach ($activeLogs as $log) {
+                        $newNotes = $log->notes . " | SIZES_DATA:" . json_encode($validSizes);
+                        
+                        // Update Log masing-masing petugas jadi Selesai
+                        $log->update([
+                            'status' => 'Selesai',
+                            'output_qty' => $totalOutput,
+                            'notes' => $newNotes,
+                        ]);
+
+                        // SISIPKAN: Simpan data ke production_outputs untuk SETIAP petugas
+                        \App\Models\ProductionOutput::create([
+                            'order_id' => $record->id,
+                            'employee_id' => $log->employee_id, 
+                            'stage' => 'Cutting',
+                            'qty' => $totalOutput,
+                            'status' => 'Selesai',
+                            'notes' => 'Pencatatan otomatis hasil cutting',
+                        ]);
+                    }
+
+                    // 3. Buat Log Sewing (cukup 1 saja untuk tahap berikutnya)
+                    ProductionLog::create([
+                        'order_id' => $record->id,
+                        'employee_id' => $activeLogs->first()->employee_id,
+                        'stage' => 'Sewing',
+                        'status' => 'Mulai',
+                        'notes' => $activeLogs->first()->notes . " | SIZES_DATA:" . json_encode($validSizes),
+                        'timestamp' => now(),
                     ]);
                 }
 
                 $record->update(['status' => 'Sewing']);
-
-                ProductionLog::create([
-                    'order_id' => $record->id,
-                    'employee_id' => Auth::user()->employee_id ?? 1,
-                    'stage' => 'Sewing',
-                    'status' => 'Mulai',
-                    'timestamp' => now(),
-                ]);
 
                 $recipients = Cache::remember('users_with_production_roles', 3600, function () {
                     return User::role(['Owner', 'Admin', 'Cutting', 'Tailor', 'QC/Packing'])->get();

@@ -16,16 +16,15 @@ class EmployeeProductivity extends Page
     protected static ?string $title = 'Catatan Hasil Kerja';
     protected static string $view = 'filament.pages.employee-productivity';
 
-    protected static bool $shouldRegisterNavigation = true;
     public ?string $startDate = null;
     public ?string $endDate = null;
 
     public function mount()
     {
-        // Default: Tampilkan minggu ini jika belum ada filter
+        // Default: Periode Minggu - Sabtu minggu berjalan
         if (! $this->startDate) {
-            $this->startDate = now()->startOfWeek(Carbon::MONDAY)->format('Y-m-d');
-            $this->endDate = now()->startOfWeek(Carbon::MONDAY)->addDays(5)->format('Y-m-d');
+            $this->startDate = now()->startOfWeek(Carbon::SUNDAY)->format('Y-m-d');
+            $this->endDate = now()->startOfWeek(Carbon::SUNDAY)->addDays(6)->format('Y-m-d');
         }
     }
 
@@ -63,10 +62,10 @@ class EmployeeProductivity extends Page
                 ->color('danger')
                 ->icon('heroicon-m-x-mark')
                 ->action(function () {
-                    $this->startDate = now()->startOfWeek(Carbon::MONDAY)->format('Y-m-d');
-                    $this->endDate = now()->startOfWeek(Carbon::MONDAY)->addDays(5)->format('Y-m-d');
+                    $this->startDate = now()->startOfWeek(Carbon::SUNDAY)->format('Y-m-d');
+                    $this->endDate = now()->startOfWeek(Carbon::SUNDAY)->addDays(6)->format('Y-m-d');
                 })
-                ->visible(fn () => $this->startDate !== now()->startOfWeek(Carbon::MONDAY)->format('Y-m-d')),
+                ->visible(fn () => $this->startDate !== now()->startOfWeek(Carbon::SUNDAY)->format('Y-m-d')),
         ];
     }
 
@@ -74,30 +73,61 @@ class EmployeeProductivity extends Page
     {
         $user = Auth::user();
         $employee = $user->employee;
+        
+        // Pastikan employee ditemukan
+        if (!$employee) return [];
 
-        $defaultStart = now()->startOfWeek(Carbon::MONDAY)->format('Y-m-d');
-        $defaultEnd = now()->startOfWeek(Carbon::MONDAY)->addDays(5)->format('Y-m-d');
-
-        $outputs = ProductionOutput::with('order')
+        // Ambil data output (Gunakan nama kolom 'qty' sesuai image_7d9934.jpg)
+        $outputs = ProductionOutput::with(['order.garmentModel',
+                                            'order.inventory',
+                                            'order.productionLogs'])
             ->where('employee_id', $employee->id)
             ->whereBetween('created_at', [$this->startDate . ' 00:00:00', $this->endDate . ' 23:59:59'])
             ->latest()
             ->get();
 
-        $totalQty = $outputs->sum('qty');
-        $currentRate = ($employee->rate_per_pcs > 0) 
-            ? $employee->rate_per_pcs 
-            : ($employee->roleRate->rate_per_pcs ?? 0);
+        // Ambil tipe upah (pcs/daily)
+        $salaryType = $employee->roleRate->rate_type ?? 'pcs'; 
+        $standardRate = $employee->roleRate->rate_amount ?? 0;
 
-        $isFiltered = ($this->startDate !== $defaultStart) || ($this->endDate !== $defaultEnd);
+        $dailyGrouped = [];
+        if ($salaryType === 'daily') {
+            $dailyGrouped = $outputs->groupBy(function($item) {
+                return $item->created_at->format('Y-m-d');
+            });
+        }
+
+
+        $totalIncome = 0;
+        $workSummary = 0;
+
+        if ($salaryType === 'daily') {
+            // HITUNG HARIAN
+            $uniqueDays = $dailyGrouped->count();
+            $workSummary = $uniqueDays; 
+            $totalIncome = $uniqueDays * $standardRate;
+        } else {
+            // HITUNG BORONGAN (Gunakan kolom 'qty')
+            $workSummary = $outputs->sum('qty'); 
+            
+            foreach ($outputs as $output) {
+                $modelRate = $output->order->garmentModel->tailor_rate ?? $standardRate;
+                $totalIncome += ($output->qty * $modelRate);
+            }
+        }
+
+        $defaultStart = now()->startOfWeek(Carbon::SUNDAY)->format('Y-m-d');
+        $isFiltered = ($this->startDate !== $defaultStart);
 
         return [
-            'outputs' => $outputs->take(10),
-            'total_minggu_ini' => $totalQty, 
-            'estimasi_gaji' => $totalQty * $currentRate,
-            'rate_per_pcs' => $currentRate,
+            'outputs' => $outputs,
+            'salary_type' => $salaryType,
+            'daily_grouped' => $dailyGrouped,
+            'work_summary' => $workSummary,
+            'total_income' => $totalIncome,
+            'standard_rate' => $standardRate,
             'job_desk' => $employee->job_desk,
-            'label_periode' => \Carbon\Carbon::parse($this->startDate)->translatedFormat('d F Y') . ' - ' . \Carbon\Carbon::parse($this->endDate)->translatedFormat('d F Y'),
+            'label_periode' => Carbon::parse($this->startDate)->translatedFormat('d F Y') . ' - ' . Carbon::parse($this->endDate)->translatedFormat('d F Y'),
             'is_filtered' => $isFiltered,
         ];
     }

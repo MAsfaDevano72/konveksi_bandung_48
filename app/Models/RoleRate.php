@@ -9,7 +9,8 @@ class RoleRate extends Model
 {
     protected $fillable = [
         'role_name',
-        'rate_per_pcs',
+        'rate_amount',
+        'rate_type',
     ];
 
     public function employees(): HasMany

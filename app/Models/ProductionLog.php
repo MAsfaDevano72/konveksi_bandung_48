@@ -34,7 +34,7 @@ class ProductionLog extends Model
     }
 
     protected $casts = [
-        'notes' => 'array',
+        // 'notes' => 'array',
     ];
 }
 

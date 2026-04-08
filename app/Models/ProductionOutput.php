@@ -43,6 +43,35 @@ class ProductionOutput extends Model
 
     public function employee(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'employee_id');
+        return $this->belongsTo(Employee::class, 'employee_id');
+    }
+
+    public function getSizeDetailAttribute()
+    {
+        // 1. Cari log produksi dari order ini yang stagenya 'Cutting'
+        $cuttingLog = $this->order->productionLogs
+            ->where('stage', 'Cutting')
+            ->first();
+
+        if (!$cuttingLog || !str_contains($cuttingLog->notes, 'SIZES_DATA:')) {
+            return 'All Size';
+        }
+
+        try {
+            // 2. Ekstrak bagian JSON dari string notes
+            $parts = explode('SIZES_DATA:', $cuttingLog->notes);
+            $jsonStr = $parts[1] ?? '[]';
+            
+            $sizes = json_decode($jsonStr, true);
+
+            if (is_array($sizes) && count($sizes) > 0) {
+                // 3. Gabungkan ukuran (contoh: "M, L, XL")
+                return collect($sizes)->pluck('size')->implode(', ');
+            }
+        } catch (\Exception $e) {
+            return 'All Size';
+        }
+
+        return 'All Size';
     }
 }

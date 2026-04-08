@@ -14,6 +14,9 @@ use App\Models\Order;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Filament\Tables\Actions\RestoreAction;
+use Filament\Tables\Actions\ForceDeleteAction;
+use Filament\Tables\Filters\TrashedFilter;
 
 class InventoryResource extends Resource
 {
@@ -176,12 +179,20 @@ class InventoryResource extends Resource
                         'Pcs' => 'Pcs',
                         'Rol' => 'Rol',
                         'Pack' => 'Bungkus'
-                    ])
+                    ]),
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Hanya Bahan Aktif'),
+                TrashedFilter::make()
+                    ->label('Status Arsip')
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()->label(''),
                 Tables\Actions\EditAction::make()->label(''),
-                Tables\Actions\DeleteAction::make()->label(''),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\DeleteAction::make(),
+                    RestoreAction::make(),
+                    ForceDeleteAction::make(),
+                ]),
                 Tables\Actions\Action::make('produksi_langsung')
                     ->label('Produksi Langsung')
                     ->icon('heroicon-o-rocket-launch')
@@ -189,10 +200,14 @@ class InventoryResource extends Resource
                     ->disabled(fn ($record) => $record->stock <= 0 || $record->type !== 'Kain')
                     ->modalHeading(fn ($record) => "Produksi Langsung: {$record->name} - {$record->color} || Sisa: {$record->stock} Rol  {$record->length} Yard")
                     ->form([
-                        Forms\Components\TextInput::make('model_baju')
-                            ->label('Model Baju')
-                            ->required()
-                            ->placeholder('Masukkan nama model...'),
+                        Forms\Components\Select::make('garment_model_id')
+                                ->label('Model Baju (Tarif Penjahit)')
+                                ->options(\App\Models\GarmentModel::pluck('name', 'id'))
+                                ->required()
+                                ->searchable()
+                                ->preload()
+                                ->columnSpanFull()
+                                ->helperText('Pilihan ini menentukan upah jahit per pcs nantinya.'),
 
                         Forms\Components\Grid::make(2)->schema([
                             Forms\Components\TextInput::make('jumlah_rol')
@@ -202,15 +217,14 @@ class InventoryResource extends Resource
                                 ->minValue(1)
                                 ->rules([fn ($record) => "max:{$record->stock}"])
                                 ->reactive() 
+                                ->suffix('Rol')
                                 ->helperText(function ($get, $record) {
                                     $rol = (int) $get('jumlah_rol') ?? 0;
-                                    
                                     if ($rol <= 0 ) {
-                                        return "Rol tersedia: {$record->stock} Rol {$record->length} Yard.";
+                                        return "Rol tersedia: {$record->stock} Rol.";
                                     }
-
-                                    return "Anda memilih {$rol}.";
-                                }),
+                                    return "Anda memilih {$rol} Rol.";
+                                }), 
 
                             Forms\Components\TextInput::make('jumlah_yard')
                                 ->label('Total Yard Digunakan')
@@ -222,22 +236,23 @@ class InventoryResource extends Resource
                                 ->reactive() 
                                 ->helperText(function ($get, $record) {
                                     $yard = (int) $get('jumlah_yard') ?? 0;
-                                    
                                     if ($yard <= 0) {
-                                        return "Tersisa: {$record->length} Yard.";
+                                        return "Yard tersedia: {$record->length} Yard.";
                                     }
-
                                     return "Anda memilih {$yard} Yard.";
                                 }),
                         ]),
                     ])
                     ->action(function ($data, $record) {
+                        $garmentModel = \App\Models\GarmentModel::find($data['garment_model_id']);
+
                         \App\Models\Order::create([
                             'order_number' => 'FAST-' . now()->format('ymd-His'),
-                            'agency_name'  => 'INTERNAL GUDANG',
+                            'agency_name'  => 'MODISMA',
                             'client_name'  => $record->color,
                             'phone'        => 0, 
-                            'product_name' => $data['model_baju'] . " (" . $record->name . ")",
+                            'product_name' => $garmentModel->name . " (" . $record->name . ")",
+                            'garment_model_id' => $data['garment_model_id'],
                             'quantity'     => 0,
                             'qty_roll'     => $data['jumlah_rol'],
                             'used_yard'    => $data['jumlah_yard'],
@@ -252,16 +267,12 @@ class InventoryResource extends Resource
 
                         Notification::make()
                             ->title('Berhasil!')
-                            ->body("Stok dipotong: {$data['jumlah_rol']} Rol & {$data['jumlah_yard']} Yard.")
+                            ->body("Pesanan Stok dibuat: {$garmentModel->name} menggunakan {$data['jumlah_rol']} Rol kain.")
                             ->success()
                             ->send();
                     })
             ])
             ->bulkActions([
-            ])
-            ->filters([
-                Tables\Filters\TernaryFilter::make('is_active')
-                    ->label('Hanya Bahan Aktif')
             ]);
     }
 
@@ -281,6 +292,4 @@ class InventoryResource extends Resource
             'edit' => Pages\EditInventory::route('/{record}/edit'),
         ];
     }
-
-    
 }

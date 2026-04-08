@@ -34,21 +34,21 @@ class EmployeeStatisticResource extends Resource
                 Tables\Columns\TextColumn::make('rate_info')
                     ->label('Tarif / Pcs')
                     ->getStateUsing(function (Employee $record) {
-                        $rate = $record->rate_per_pcs > 0 
-                            ? $record->rate_per_pcs 
-                            : ($record->roleRate->rate_per_pcs ?? 0);
+                        $rate = $record->rate_amount > 0 
+                            ? $record->rate_amount 
+                            : ($record->roleRate->rate_amount ?? 0);
                         return 'Rp ' . number_format($rate, 0, ',', '.');
                     })
                     ->badge()
-                    ->color(fn (Employee $record) => $record->rate_per_pcs > 0 ? 'warning' : 'gray')
-                    ->description(fn (Employee $record) => $record->rate_per_pcs > 0 ? 'Tarif Khusus' : 'Standar'),
+                    ->color(fn (Employee $record) => $record->rate_amount > 0 ? 'warning' : 'gray')
+                    ->description(fn (Employee $record) => $record->rate_amount > 0 ? 'Tarif Khusus' : 'Standar'),
 
                 // Total Sewing
                 Tables\Columns\TextColumn::make('total_sewing')
                     ->label('Total Jahit')
                     ->getStateUsing(function (Employee $record, $livewire) {
-                        $start = $livewire->tableFilters['from'] ?? now()->startOfWeek(Carbon::MONDAY);
-                        $until = $livewire->tableFilters['until'] ?? now()->startOfWeek(Carbon::MONDAY)->addDays(5);
+                        $start = $livewire->tableFilters['from'] ?? now()->startOfWeek(Carbon::SUNDAY);
+                        $until = $livewire->tableFilters['until'] ?? now()->startOfWeek(Carbon::SUNDAY)->addDays(6);
 
                         return $record->outputs()
                             ->where('stage', 'Sewing')
@@ -61,8 +61,8 @@ class EmployeeStatisticResource extends Resource
                 Tables\Columns\TextColumn::make('total_qc')
                     ->label('Total QC/Pack')
                     ->getStateUsing(function (Employee $record, $livewire) {
-                        $start = $livewire->tableFilters['from'] ?? now()->startOfWeek(Carbon::MONDAY);
-                        $until = $livewire->tableFilters['until'] ?? now()->startOfWeek(Carbon::MONDAY)->addDays(5);
+                        $start = $livewire->tableFilters['from'] ?? now()->startOfWeek(Carbon::SUNDAY);
+                        $until = $livewire->tableFilters['until'] ?? now()->startOfWeek(Carbon::SUNDAY)->addDays(6);
 
                         return $record->outputs()
                             ->where('stage', 'QC/Packing')
@@ -75,14 +75,14 @@ class EmployeeStatisticResource extends Resource
                 Tables\Columns\TextColumn::make('total_upah')
                     ->label('Estimasi Upah')
                     ->getStateUsing(function (Employee $record, $livewire) {
-                        $start = $livewire->tableFilters['from'] ?? now()->startOfWeek(Carbon::MONDAY);
-                        $until = $livewire->tableFilters['until'] ?? now()->startOfWeek(Carbon::MONDAY)->addDays(5);
-                        
+                        $start = $livewire->tableFilters['from'] ?? now()->startOfWeek(Carbon::SUNDAY);
+                        $until = $livewire->tableFilters['until'] ?? now()->startOfWeek(Carbon::SUNDAY)->addDays(6);
+
                         $totalQty = $record->outputs()
                             ->whereBetween('created_at', [Carbon::parse($start)->startOfDay(), Carbon::parse($until)->endOfDay()])
                             ->sum('qty');
                             
-                        $rate = $record->rate_per_pcs > 0 ? $record->rate_per_pcs : ($record->roleRate->rate_per_pcs ?? 0);
+                        $rate = $record->rate_amount > 0 ? $record->rate_amount : ($record->roleRate->rate_amount ?? 0);
                         
                         return 'Rp ' . number_format($totalQty * $rate, 0, ',', '.');
                     })

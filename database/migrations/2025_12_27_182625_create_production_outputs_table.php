@@ -14,8 +14,8 @@ return new class extends Migration
         Schema::create('production_outputs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('order_id')->constrained()->onDelete('cascade');
-            $table->foreignId('employee_id')->constrained('users'); 
-            $table->string('stage'); 
+            $table->foreignId('employee_id')->constrained('employees');
+            $table->string('stage');
             $table->integer('qty');
             $table->string('status')->default('Pending');
             $table->text('notes')->nullable();

@@ -11,9 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('role_rates', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
+        Schema::table('orders', function (Blueprint $table) {
+            $table->foreignId('garment_model_id')->nullable()->constrained('garment_models')->nullOnDelete();
         });
     }
 
@@ -22,6 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('role_rates');
+        Schema::table('orders', function (Blueprint $table) {
+            //
+        });
     }
 };

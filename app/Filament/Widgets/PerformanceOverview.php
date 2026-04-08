@@ -16,8 +16,8 @@ class PerformanceOverview extends BaseWidget
     public function mount(): void
     {
         // Set default awal saat pertama kali load agar tidak error null
-        $this->filters['from'] = now()->startOfWeek(Carbon::MONDAY)->translatedFormat('Y-m-d');
-        $this->filters['until'] = now()->startOfWeek(Carbon::MONDAY)->addDays(5)->translatedFormat('Y-m-d');
+        $this->filters['from'] = now()->startOfWeek(Carbon::SUNDAY)->translatedFormat('Y-m-d');
+        $this->filters['until'] = now()->startOfWeek(Carbon::SUNDAY)->addDays(6)->translatedFormat('Y-m-d');
     }
 
     // Fungsi untuk menangkap update dari tombol filter
@@ -48,7 +48,7 @@ class PerformanceOverview extends BaseWidget
                     ->join('employees', 'production_outputs.employee_id', '=', 'employees.id')
                     ->leftJoin('role_rates', 'employees.job_desk', '=', 'role_rates.role_name')
                     ->whereBetween('production_outputs.created_at', [$start, $end])
-                    ->sum(DB::raw('production_outputs.qty * COALESCE(NULLIF(employees.rate_per_pcs, 0), role_rates.rate_per_pcs, 0)')),
+                    ->sum(DB::raw('production_outputs.qty * COALESCE(NULLIF(employees.rate_amount, 0), role_rates.rate_amount, 0)')),
             ];
         });
 

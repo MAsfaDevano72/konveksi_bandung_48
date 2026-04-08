@@ -40,6 +40,12 @@ class AdminPanelProvider extends PanelProvider
                 ->label(fn() => auth()->user()->name) 
                 ->icon('heroicon-m-user-circle'),
             ])
+            ->navigationGroups([
+                'Manajemen Pegawai',
+                'Manajemen Gudang',
+                'Produksi',
+                'Sistem',
+            ])
             ->renderHook(
                 PanelsRenderHook::USER_MENU_AFTER, 
                 fn (): \Illuminate\Support\HtmlString => new \Illuminate\Support\HtmlString('

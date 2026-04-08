@@ -24,6 +24,7 @@ class Order extends Model
         'is_completed',
         'is_stock_production', 
         'inventory_id',
+        'garment_model_id',
     ];
 
     protected static function booted()
@@ -71,6 +72,15 @@ class Order extends Model
 
     public function getTotalQCAttribute() {
         return $this->outputs()->where('stage', 'QC/Packing')->sum('qty');
+    }
+
+    public function garmentModel(): BelongsTo {
+        return $this->belongsTo(GarmentModel::class, 'garment_model_id');
+    }
+
+    public function inventory(): BelongsTo 
+    {
+        return $this->belongsTo(Inventory::class, 'inventory_id')->withTrashed();
     }
 
     protected $casts = [
