@@ -755,7 +755,8 @@ class ProductionKanban extends KanbanBoard
 
                 if ($activeLogs->count() > 0) {
                     foreach ($activeLogs as $log) {
-                        $newNotes = $log->notes . " | SIZES_DATA:" . json_encode($validSizes);
+                        $cleanNotes = preg_replace('/\s*\|\s*SIZES_DATA:\[.*\]/', '', $log->notes);
+                        $newNotes = $cleanNotes . " | SIZES_DATA:" . json_encode($validSizes);
                         
                         // Update Log masing-masing petugas jadi Selesai
                         $log->update([
@@ -764,7 +765,6 @@ class ProductionKanban extends KanbanBoard
                             'notes' => $newNotes,
                         ]);
 
-                        // SISIPKAN: Simpan data ke production_outputs untuk SETIAP petugas
                         \App\Models\ProductionOutput::create([
                             'order_id' => $record->id,
                             'employee_id' => $log->employee_id, 
@@ -781,7 +781,7 @@ class ProductionKanban extends KanbanBoard
                         'employee_id' => $activeLogs->first()->employee_id,
                         'stage' => 'Sewing',
                         'status' => 'Mulai',
-                        'notes' => $activeLogs->first()->notes . " | SIZES_DATA:" . json_encode($validSizes),
+                        'notes' => $newNotes,
                         'timestamp' => now(),
                     ]);
                 }

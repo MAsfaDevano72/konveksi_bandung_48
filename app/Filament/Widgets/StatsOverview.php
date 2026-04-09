@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\Inventory;
 use App\Models\Order;
+use App\Models\Employee;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\Auth;
@@ -45,6 +46,7 @@ class StatsOverview extends BaseWidget
                 'lowStock' => $hasWarehouseAccess ? Inventory::whereRaw('stock <= min_stock')->count() : 0,
                 'totalItems' => $hasWarehouseAccess ? Inventory::count() : 0,
                 'inventoryValue' => $hasWarehouseAccess ? (Inventory::query()->selectRaw('SUM(stock * price) as total_value')->value('total_value') ?? 0) : 0,
+                'totalEmployees' => Employee::whereNotIn('job_desk', ['Owner', 'Admin'])->count(),
             ];
         });
 
@@ -76,13 +78,17 @@ class StatsOverview extends BaseWidget
                 ->icon('heroicon-m-archive-box')
                 ->description('Jenis bahan baku di gudang'),
 
-            Stat::make('Nilai Inventory', 'Rp ' . number_format($data['inventoryValue'], 0, ',', '.'))
-                ->description('Total aset bahan baku')
+            // Stat::make('Nilai Inventory', 'Rp ' . number_format($data['inventoryValue'], 0, ',', '.'))
+            //     ->description('Total aset bahan baku')
+            //     ->color('primary')
+            //     ->icon('heroicon-m-banknotes'),
+
+            Stat::make('Total Pegawai', $data['totalEmployees'])
+                ->description('Pegawai aktif')
                 ->color('primary')
-                ->icon('heroicon-m-banknotes'),
+                ->icon('heroicon-m-users'),
         ];
 
-        // LOGIKA PENGEMBALIAN (RETURN) BERDASARKAN ROLE
         if ($isGudang) {
             return $warehouseStats; // Hanya tampilkan kartu gudang
         }

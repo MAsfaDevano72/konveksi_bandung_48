@@ -59,16 +59,17 @@
     // Ambil dan Decode SIZES_DATA (JSON)
     $sizes = [];
     if ($logDetails && str_contains($logDetails, 'SIZES_DATA:')) {
-        $parts = explode('SIZES_DATA:', $logDetails);
-        $sizes = json_decode(trim($parts[1]), true) ?? [];
+        if (preg_match('/SIZES_DATA:(\[.*?\])/', $logDetails, $matches)) {
+            $sizes = json_decode($matches[1], true) ?? [];
+        }
     }
     
     // 2. Ambil Log Tahap Aktif (Untuk Nama Penjahit/Petugas saat ini)
     $activeLogs = \App\Models\ProductionLog::where('order_id', $realId)
-    ->where('stage', ($idVal >= 1000000 ? 'QC/Packing' : $record->status))
-    ->where('status', 'Sedang Diproses')
-    ->with('employee')
-    ->get();
+        ->where('stage', ($idVal >= 1000000 ? 'QC/Packing' : $record->status))
+        ->where('status', 'Sedang Diproses')
+        ->with('employee')
+        ->get();
 
     $isOwner = $activeLogs->pluck('employee_id')->contains($user->employee_id);
     $isOtherUserProcessing = $activeLogs->count() > 0 && !$isOwner;
@@ -101,11 +102,24 @@
 
     {{-- Top: Badge SPK & Deadline --}}
     <div class="flex justify-between items-start mb-3">
-        <div wire:click="mountAction('viewOrderDetails', {recordId: {{ $realId }}})" 
-        class="cursor-pointer hover:underline flex">
+        <div class="cursor-pointer hover:underline flex">
+        @if($record->status === 'Sewing')
+            <a href="{{ route('print.spk.sewing', $record->id) }}" 
+                target="_blank"
+                title="Cetak Surat Jalan"
+                class="p-1 text-gray-600 rounded-full transition-colors bg-white shadow-sm"
+                style="margin-right: 2px"
+                onmouseenter="this.style.backgroundColor='#dbeafe'" 
+                onmouseleave="this.style.backgroundColor='#fff'">
+                
+                <x-heroicon-s-printer class="w-4 h-4" />
+            </a>
+        @endif
+
             <span
-                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border border-black/5 gap-1"
-                style="background-color: {{ $statusColors['bg'] }}; color: {{ $statusColors['text'] }};">
+                wire:click="mountAction('viewOrderDetails', {recordId: {{ $realId }}})"
+                class="inline-flex items-center px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider border border-black/5 gap-1"
+                style="background-color: {{ $statusColors['bg'] }}; color: {{ $statusColors['text'] }}; font-size: 15px;">
                 {{ $record->order_number }}
                 <x-heroicon-o-information-circle class="w-4 h-4" />
             </span>
