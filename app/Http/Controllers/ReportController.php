@@ -1,8 +1,10 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\Setting;
-use App\Models\ProductionOutput;
+use App\Models\Employee;
+use App\Models\ProductionLog;
 use Illuminate\Http\Request;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
@@ -12,58 +14,74 @@ class ReportController extends Controller
 {
     public function staffProductivity(Request $request)
     {
-        // 1. Tentukan rentang waktu (Default: Senin s/d Sabtu)
+        // 1. Tentukan rentang waktu
         $start = $request->start_date 
-            ? Carbon::parse($request->start_date) 
-            : now()->startOfWeek(Carbon::MONDAY);
+            ? Carbon::parse($request->start_date)->startOfDay() 
+            : now()->startOfWeek(Carbon::SUNDAY)->startOfDay();
 
         $end = $request->end_date 
-            ? Carbon::parse($request->end_date) 
-            : $start->copy()->addDays(5);
+            ? Carbon::parse($request->end_date)->endOfDay() 
+            : now()->endOfWeek(Carbon::SATURDAY)->endOfDay();
 
-        $queryStart = $start->copy()->startOfDay();
-        $queryEnd = $end->copy()->endOfDay();
-
-        // 2. Ambil data perusahaan... (tetap sama)
+        // 2. Ambil data perusahaan
         $setting = Setting::first();
 
-        // 3. Ambil data produktivitas pegawai
-        $reportData = DB::table('production_outputs')
-            ->join('employees', 'production_outputs.employee_id', '=', 'employees.id')
-            ->leftJoin('role_rates', 'employees.job_desk', '=', 'role_rates.role_name') 
-            ->select(
-                'employees.name as employee_name',
-                'employees.job_desk as job_desk',
-                'production_outputs.stage',
-                DB::raw('SUM(production_outputs.qty) as total_qty'),
-                DB::raw('SUM(
-                    production_outputs.qty * IF(employees.rate_per_pcs > 0, employees.rate_per_pcs, COALESCE(role_rates.rate_per_pcs, 0))
-                ) as total_wage')
-            )
-            ->whereBetween('production_outputs.created_at', [$queryStart, $queryEnd])
-            ->groupBy(
-                'employees.id', 
-                'employees.name', 
-                'employees.job_desk',
-                'production_outputs.stage', 
-                'employees.rate_per_pcs', 
-                'role_rates.rate_per_pcs')
+        // 3. Ambil data pegawai (Kecuali Admin & Owner)
+        $employees = Employee::with(['roleRate'])
+            ->whereNotIn('job_desk', ['Owner', 'Admin'])
             ->get();
 
-        // 4. Load View dan Generate PDF
+        // 4. Transform data agar sesuai dengan logika Dashboard
+        $reportData = $employees->map(function ($emp) use ($start, $end) {
+            $salaryType = $emp->roleRate->rate_type ?? 'pcs';
+            $standardRate = $emp->roleRate->rate_amount ?? 0;
+            
+            // Hitung Total Qty
+            $outputs = $emp->outputs()
+                ->with(['order.garmentModel'])
+                ->whereBetween('created_at', [$start, $end])
+                ->get();
+            
+            $totalQty = $outputs->sum('qty');
+            $totalWage = 0;
+
+            if ($salaryType === 'daily') {
+                // Logika Harian 
+                $days = ProductionLog::where('employee_id', $emp->id)
+                    ->whereBetween('timestamp', [$start, $end])
+                    ->count(DB::raw('DISTINCT DATE(timestamp)'));
+                
+                $totalWage = $days * $standardRate;
+                $attendanceInfo = $days . " Hari";
+            } else {
+                // Logika Borongan (Pcs)
+                foreach ($outputs as $out) {
+                    $modelRate = $out->order->garmentModel->tailor_rate ?? $standardRate;
+                    $totalWage += ($out->qty * $modelRate);
+                }
+                $attendanceInfo = "-";
+            }
+
+            return (object) [
+                'employee_name' => $emp->name,
+                'job_desk' => $emp->job_desk,
+                'attendance_info' => $attendanceInfo,
+                'total_qty' => $totalQty,
+                'total_wage' => $totalWage,
+            ];
+        });
+
+        // 5. Load View dan Generate PDF
         $pdf = Pdf::loadView('reports.staff-productivity', [
             'data' => $reportData,
             'setting' => $setting,
             'start' => $start->translatedFormat('d F Y'),
             'end' => $end->translatedFormat('d F Y'),
+            'total_keseluruhan' => $reportData->sum('total_wage')
         ]);
 
-        // 5. Tentukan nama file berdasarkan rentang tanggal
-        $formattedStart = $start->format('d-m-Y');
-        $formattedEnd = $end->format('d-m-Y');
-        $filename = "Laporan_Produktivitas_Pegawai_{$formattedStart}_sd_{$formattedEnd}.pdf";
+        $filename = "Laporan_Produktivitas_Pegawai_{$start->format('d-m-Y')}_sd_{$end->format('d-m-Y')}.pdf";
 
         return $pdf->stream($filename);
-        return $pdf->download($filename);
     }
 }

@@ -4,8 +4,9 @@
     <title>Surat Jalan Jahit - {{ $order->order_number }}</title>
     <style>
         body { font-family: sans-serif; font-size: 12px; line-height: 1.5; }
-        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; }
         .header h1 { margin: 0; font-size: 20px; }
+        .title { text-align: center; margin-bottom: 10px; }
         .info-table { width: 100%; margin-bottom: 20px; }
         .main-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
         .main-table th, .main-table td { border: 1px solid #000; padding: 8px; text-align: left; }
@@ -19,6 +20,10 @@
     <div class="header">
         <h1>KONVEKSI BANDUNG 48</h1>
         <p>Jl. Situgunting Timur II No. 48, 008/008, Suka Asih, Bojongloa Kaler, Kota Bandung   Telp: 0812-xxxx-xxxx</p>
+    </div>
+
+    <div class="title">
+        <h2>Surat Jalan Penjahit</h2>
     </div>
 
     <table class="info-table">

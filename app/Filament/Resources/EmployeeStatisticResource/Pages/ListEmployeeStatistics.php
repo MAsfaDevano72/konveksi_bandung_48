@@ -24,8 +24,8 @@ class ListEmployeeStatistics extends ListRecords
     // Fungsi bantuan untuk mengatur tanggal ke default (Senin - Sabtu)
     protected function resetToDefaultDates(): void
     {
-        $this->tableFilters['from'] = now()->startOfWeek(Carbon::MONDAY)->translatedFormat('Y-m-d');
-        $this->tableFilters['until'] = now()->startOfWeek(Carbon::MONDAY)->addDays(5)->translatedFormat('Y-m-d');
+        $this->tableFilters['from'] = now()->startOfWeek(Carbon::SUNDAY)->translatedFormat('Y-m-d');
+        $this->tableFilters['until'] = now()->startOfWeek(Carbon::SUNDAY)->addDays(6)->translatedFormat('Y-m-d');
     }
 
     protected function getHeaderActions(): array
@@ -51,8 +51,8 @@ class ListEmployeeStatistics extends ListRecords
                 })
                 ->visible(function () {
                     // Cek apakah tanggal saat ini berbeda dengan tanggal default
-                    $defaultFrom = now()->startOfWeek(Carbon::MONDAY)->translatedFormat('Y-m-d');
-                    $defaultUntil = now()->startOfWeek(Carbon::MONDAY)->addDays(5)->translatedFormat('Y-m-d');
+                    $defaultFrom = now()->startOfWeek(Carbon::SUNDAY)->translatedFormat('Y-m-d');
+                    $defaultUntil = now()->startOfWeek(Carbon::SUNDAY)->addDays(6)->translatedFormat('Y-m-d');
 
                     return ($this->tableFilters['from'] !== $defaultFrom) || 
                            ($this->tableFilters['until'] !== $defaultUntil);

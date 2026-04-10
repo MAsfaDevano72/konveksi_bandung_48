@@ -1,6 +1,9 @@
 <?php
+
 namespace App\Filament\Widgets;
 
+use App\Models\Employee;
+use App\Models\ProductionLog;
 use App\Models\ProductionOutput;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
@@ -15,12 +18,10 @@ class PerformanceOverview extends BaseWidget
 
     public function mount(): void
     {
-        // Set default awal saat pertama kali load agar tidak error null
-        $this->filters['from'] = now()->startOfWeek(Carbon::SUNDAY)->translatedFormat('Y-m-d');
-        $this->filters['until'] = now()->startOfWeek(Carbon::SUNDAY)->addDays(6)->translatedFormat('Y-m-d');
+        $this->filters['from'] = now()->startOfWeek(Carbon::SUNDAY)->format('Y-m-d');
+        $this->filters['until'] = now()->startOfWeek(Carbon::SUNDAY)->addDays(6)->format('Y-m-d');
     }
 
-    // Fungsi untuk menangkap update dari tombol filter
     #[On('updateFilter')]
     public function updateFilter(array $data): void
     {
@@ -34,21 +35,51 @@ class PerformanceOverview extends BaseWidget
 
         $cacheKey = "perf_stats_" . $start->format('Ymd') . "_" . $end->format('Ymd');
 
-        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 1800, function () use ($start, $end) {
+        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 600, function () use ($start, $end) {
+            
+            // 1. Hitung Total Sewing & QC
+            $sewing = ProductionOutput::where('stage', 'Sewing')
+                ->whereBetween('created_at', [$start, $end])
+                ->sum('qty');
+
+            $qc = ProductionOutput::where('stage', 'QC/Packing')
+                ->whereBetween('created_at', [$start, $end])
+                ->sum('qty');
+
+            // 2. Hitung Estimasi Upah (Logika Gabungan)
+            $totalUpah = 0;
+
+            // Ambil semua pegawai kecuali Admin/Owner
+            $employees = Employee::whereNotIn('job_desk', ['Owner', 'Admin'])->get();
+
+            foreach ($employees as $emp) {
+                $salaryType = $emp->roleRate->rate_type ?? 'pcs';
+                $standardRate = $emp->roleRate->rate_amount ?? 0;
+
+                if ($salaryType === 'daily') {
+                    $days = ProductionLog::where('employee_id', $emp->id)
+                        ->whereBetween('timestamp', [$start, $end])
+                        ->count(DB::raw('DISTINCT DATE(timestamp)'));
+                    
+                    $totalUpah += ($days * $standardRate);
+                } else {
+                    // Hitung Borongan (Tailor Rate dari Model Baju)
+                    $outputs = $emp->outputs()
+                        ->with(['order.garmentModel'])
+                        ->whereBetween('created_at', [$start, $end])
+                        ->get();
+
+                    foreach ($outputs as $output) {
+                        $modelRate = $output->order->garmentModel->tailor_rate ?? $standardRate;
+                        $totalUpah += ($output->qty * $modelRate);
+                    }
+                }
+            }
+
             return [
-                'totalSewing' => ProductionOutput::where('stage', 'Sewing')
-                    ->whereBetween('created_at', [$start, $end])
-                    ->sum('qty'),
-
-                'totalQc' => ProductionOutput::where('stage', 'QC/Packing')
-                    ->whereBetween('created_at', [$start, $end])
-                    ->sum('qty'),
-
-                'totalUpah' => ProductionOutput::query()
-                    ->join('employees', 'production_outputs.employee_id', '=', 'employees.id')
-                    ->leftJoin('role_rates', 'employees.job_desk', '=', 'role_rates.role_name')
-                    ->whereBetween('production_outputs.created_at', [$start, $end])
-                    ->sum(DB::raw('production_outputs.qty * COALESCE(NULLIF(employees.rate_amount, 0), role_rates.rate_amount, 0)')),
+                'totalSewing' => $sewing,
+                'totalQc' => $qc,
+                'totalUpah' => $totalUpah,
             ];
         });
 
@@ -68,10 +99,5 @@ class PerformanceOverview extends BaseWidget
                 ->descriptionIcon('heroicon-m-banknotes')
                 ->color('warning'),
         ];
-    }
-
-    public static function canView(): bool
-    {
-        return str_contains(request()->url(), 'kinerja-pegawai');
     }
 }
