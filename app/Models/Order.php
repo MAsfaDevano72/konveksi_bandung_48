@@ -25,10 +25,14 @@ class Order extends Model
         'is_stock_production', 
         'inventory_id',
         'garment_model_id',
+        'unit_price',
+        'total_price',
     ];
 
     protected static function booted()
     {
+        parent::booted();
+
         $clearDashboard = function () {
             \Illuminate\Support\Facades\Cache::forget('dashboard_stats_admin');
             \Illuminate\Support\Facades\Cache::forget('dashboard_stats_general');
@@ -39,6 +43,30 @@ class Order extends Model
             $lastId = \App\Models\Order::max('id') ?? 0;
             $nextId = $lastId + 1;
             $order->order_number = $prefix . now()->format('Ymd') . '-' . str_pad($nextId, 3, '0', STR_PAD_LEFT);
+
+            if ($order->garment_model_id) {
+                $model = \App\Models\GarmentModel::find($order->garment_model_id);
+                if ($model) {
+                    $order->unit_price = $model->sale_price;
+                    $order->total_price = (float)$order->quantity * (float)$model->sale_price;
+                }
+            }
+        });
+
+        static::updating(function ($order) {
+            if ($order->isDirty('garment_model_id') && $order->garment_model_id) {
+                $model = \App\Models\GarmentModel::find($order->garment_model_id);
+                
+                if ($model) {
+                    $order->unit_price = $model->sale_price;
+                    
+                    $order->total_price = (float)$order->quantity * (float)$model->sale_price;
+                }
+            }
+
+            if ($order->isDirty('quantity') && !$order->isDirty('garment_model_id')) {
+                $order->total_price = (float)$order->quantity * (float)$order->unit_price;
+            }
         });
 
         static::created($clearDashboard);

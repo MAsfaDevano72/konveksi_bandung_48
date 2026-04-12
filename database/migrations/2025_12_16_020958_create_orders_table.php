@@ -25,6 +25,10 @@ return new class extends Migration
             $table->enum('status', ['Waiting', 'Cutting', 'Sewing', 'QC/Packing', 'Done'])->default('Waiting');
             $table->boolean('is_completed')->default(false);
             $table->boolean('is_stock_production')->default(false);
+            $table->foreignId('inventory_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('garment_model_id')->nullable()->constrained()->nullOnDelete();
+            $table->decimal('unit_price', 15, 2)->default(0)->nullable();
+            $table->decimal('total_price', 15, 2)->default(0)->nullable();
             $table->timestamps();
         });
     }

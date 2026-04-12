@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('name')->unique(); // Contoh: Kaftan Silk, Kebaya Lama
             $table->decimal('tailor_rate', 10, 2); // Tarif khusus jahit untuk model ini
+            $table->decimal('sale_price', 15, 2)->default(0); // Harga jual untuk model ini
             $table->timestamps();
         });
     }

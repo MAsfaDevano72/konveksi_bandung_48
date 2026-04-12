@@ -62,6 +62,15 @@ class OrderResource extends Resource
                         Forms\Components\TextInput::make('quantity')
                             ->label('Jumlah (Pcs)')
                             ->numeric(),
+                        Forms\Components\TextInput::make('unit_price')
+                            ->label('Harga Jual per Pcs')
+                            ->numeric()
+                            ->prefix('Rp')
+                            ->visible(fn ($get) => !empty($get('garment_model_id')))
+                            ->live()
+                            ->afterStateUpdated(fn ($state, Forms\Set $set, Forms\Get $get) => 
+                                $set('total_price', (float)$state * (float)$get('quantity'))
+                            ),
                         Forms\Components\DatePicker::make('deadline')
                             ->label('Tenggat Waktu (Deadline)'),
                         Forms\Components\Select::make('status')
@@ -102,6 +111,14 @@ class OrderResource extends Resource
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Jumlah')
                     ->suffix(' pcs'),
+                Tables\Columns\TextColumn::make('unit_price')
+                    ->label('Harga Satuan')
+                    ->money('IDR')
+                    ->suffix(' / Pcs'),
+                Tables\Columns\TextColumn::make('total_price')
+                    ->label('Total Harga')
+                    ->money('IDR'),
+
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {

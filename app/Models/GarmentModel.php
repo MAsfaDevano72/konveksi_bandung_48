@@ -9,7 +9,8 @@ class GarmentModel extends Model
 {
     protected $fillable = [
         'name', 
-        'tailor_rate'
+        'tailor_rate',
+        'sale_price',
     ];
 
     public function orders(): HasMany

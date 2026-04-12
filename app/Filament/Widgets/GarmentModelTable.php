@@ -22,6 +22,11 @@ class GarmentModelTable extends BaseWidget
                     ->money('IDR')
                     ->color('warning')
                     ->suffix(' / Pcs'),
+                Tables\Columns\TextColumn::make('sale_price')
+                    ->label('Harga Jual / Pcs')
+                    ->money('IDR')
+                    ->color('success')
+                    ->suffix(' / Pcs'),
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()
@@ -34,10 +39,18 @@ class GarmentModelTable extends BaseWidget
                             ->numeric()
                             ->prefix('IDR')
                             ->required(),
+                        \Filament\Forms\Components\TextInput::make('sale_price')
+                            ->label('Harga Jual (Per Pcs)')
+                            ->numeric()
+                            ->prefix('IDR')
+                            ->required(),
                     ]),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()->form([
+                    \Filament\Forms\Components\TextInput::make('tailor_rate')->label('Tarif Penjahit')->numeric()->prefix('IDR'),
+                    \Filament\Forms\Components\TextInput::make('sale_price')->label('Harga Jual')->numeric()->prefix('IDR'),
+                ]),
                 Tables\Actions\DeleteAction::make(),
             ]);
     }
