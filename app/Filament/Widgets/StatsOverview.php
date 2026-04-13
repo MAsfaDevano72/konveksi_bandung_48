@@ -47,6 +47,7 @@ class StatsOverview extends BaseWidget
                 'totalItems' => $hasWarehouseAccess ? Inventory::count() : 0,
                 'inventoryValue' => $hasWarehouseAccess ? (Inventory::query()->selectRaw('SUM(stock * price) as total_value')->value('total_value') ?? 0) : 0,
                 'totalEmployees' => Employee::whereNotIn('job_desk', ['Owner', 'Admin'])->count(),
+                'totalRevenue' => Order::sum('total_price'),
             ];
         });
 
@@ -65,14 +66,19 @@ class StatsOverview extends BaseWidget
                 ->description('Total pesanan sukses')
                 ->color('success')
                 ->icon('heroicon-m-check-badge'),
+
+            Stat::make('Total Pendapatan', 'Rp ' . number_format($data['totalRevenue'], 0, ',', '.'))
+                ->description('Akumulasi pendapatan dari pesanan')
+                ->color('success')
+                ->icon('heroicon-m-banknotes'),
         ];
 
         // Membuat array untuk kartu Gudang (extraStats)
         $warehouseStats = [
-            Stat::make('Stok Menipis', $data['lowStock'])
-                ->description('Bahan baku perlu re-stock')
-                ->color('danger')
-                ->icon('heroicon-m-exclamation-triangle'),
+            // Stat::make('Stok Menipis', $data['lowStock'])
+            //     ->description('Bahan baku perlu re-stock')
+            //     ->color('danger')
+            //     ->icon('heroicon-m-exclamation-triangle'),
 
             Stat::make('Total Item Gudang', $data['totalItems'])
                 ->icon('heroicon-m-archive-box')
