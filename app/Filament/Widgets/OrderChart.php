@@ -12,8 +12,6 @@ class OrderChart extends ChartWidget
 {
     protected static ?string $heading = 'Analisis Tren Pesanan';
     protected static ?int $sort = 2;
-    protected int | string | array $columnSpan = 2;
-    protected static ?string $maxHeight = '450px';
 
     // Mengatur filter untuk memilih tampilan waktu
     protected function getFilters(): ?array

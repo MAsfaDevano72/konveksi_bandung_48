@@ -60,7 +60,7 @@ class AdminPanelProvider extends PanelProvider
                 fn () => view('filament.custom.dashboard-responsive')
             )
             ->databaseNotifications()
-            ->globalSearchKeyBindings(['command+k', 'ctrl+k']) // Field Search
+            ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
             ->sidebarCollapsibleOnDesktop()
             ->databaseNotificationsPolling('25s')
             ->colors([
@@ -76,6 +76,7 @@ class AdminPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
                 \App\Filament\Widgets\OrderChart::class,
+                \App\Filament\Widgets\IncomeChart::class,
             ])
             ->middleware([
                 EncryptCookies::class,
