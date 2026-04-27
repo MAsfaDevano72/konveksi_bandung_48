@@ -31,7 +31,7 @@ class PrintSpkController extends Controller
         ];
 
         $pdf = Pdf::loadView('print.spk-sewing', $data);
-        return $pdf->setPaper('a5', 'portrait')->stream("SPK-Sewing-{$order->order_number}.pdf");
+        return $pdf->setPaper('a6', 'portrait')->stream("SPK-Sewing-{$order->order_number}.pdf");
     }
 
     private function parseSizes($notes)

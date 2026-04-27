@@ -73,41 +73,45 @@ class EmployeeStatisticResource extends Resource
 
                 // 3. PERBAIKAN: Hitungan Hari Kerja (Ucup Fix)
                 Tables\Columns\TextColumn::make('attendance_days')
-                    ->label('Hari Kerja')
                     ->getStateUsing(function (Employee $record, $livewire) {
-                        if (($record->roleRate->rate_type ?? '') !== 'daily') return '-';
+                        $start = $livewire->tableFilters['from'] ?? now()->startOfMonth();
+                        $until = $livewire->tableFilters['until'] ?? now();
+
+                        if (($record->roleRate->rate_type ?? '') === 'daily') {
+                            // AMBIL DARI TABEL ATTENDANCE
+                            return \App\Models\Attendance::where('employee_id', $record->id)
+                                ->whereBetween('date', [$start, $until])
+                                ->whereIn('status', ['Hadir', 'Lembur'])
+                                ->count() . ' Hari';
+                        }
                         
-                        $start = $livewire->tableFilters['from'];
-                        $until = $livewire->tableFilters['until'];
+                        // Tetap borongan (Production Log)
+                        return ProductionLog::where('employee_id', $record->id)
+                            ->whereBetween('timestamp', [$start, $until])
+                            ->count(DB::raw('DISTINCT DATE(timestamp)')) . ' Hari';
+                    }),
 
-                        // Gunakan COUNT(DISTINCT DATE(timestamp)) supaya jam tidak bikin hari jadi ganda
-                        $days = ProductionLog::where('employee_id', $record->id)
-                            ->whereBetween('timestamp', [Carbon::parse($start)->startOfDay(), Carbon::parse($until)->endOfDay()])
-                            ->count(DB::raw('DISTINCT DATE(timestamp)'));
-
-                        return $days . ' Hari';
-                    })
-                    ->color('primary'),
-
-                // 4. ESTIMASI UPAH (SINKRON DENGAN LOGIKA EMPLOYEE PRODUCTIVITY)
+                // Di dalam kolom estimasi_upah
                 Tables\Columns\TextColumn::make('estimasi_upah')
-                    ->label('Estimasi Upah')
                     ->getStateUsing(function (Employee $record, $livewire) {
-                        $start = $livewire->tableFilters['from'];
-                        $until = $livewire->tableFilters['until'];
-                        $dateRange = [Carbon::parse($start)->startOfDay(), Carbon::parse($until)->endOfDay()];
-
+                        $start = $livewire->tableFilters['from'] ?? now()->startOfMonth();
+                        $until = $livewire->tableFilters['until'] ?? now();
                         $salaryType = $record->roleRate->rate_type ?? 'pcs';
-                        $standardRate = $record->roleRate->rate_amount ?? 0;
-                        $totalIncome = 0;
+                        $baseRate = $record->roleRate->rate_amount ?? 0;
 
                         if ($salaryType === 'daily') {
-                            // Hitung unik hari berdasarkan ProductionLog
-                            $uniqueDays = ProductionLog::where('employee_id', $record->id)
-                                ->whereBetween('timestamp', $dateRange)
-                                ->count(DB::raw('DISTINCT DATE(timestamp)'));
+                            // Hitung Hari Kerja * Rate + Total Lembur * (Rate/8 jam - contoh)
+                            $days = \App\Models\Attendance::where('employee_id', $record->id)
+                                ->whereBetween('date', [$start, $until])
+                                ->whereIn('status', ['Hadir', 'Lembur'])
+                                ->count();
                             
-                            $totalIncome = $uniqueDays * $standardRate;
+                            $otHours = \App\Models\Attendance::where('employee_id', $record->id)
+                                ->whereBetween('date', [$start, $until])
+                                ->sum('overtime_hours');
+
+                            // Contoh rumus: (Hari * Rate) + (Jam Lembur * 15.000)
+                            return 'Rp ' . number_format(($days * $baseRate) + ($otHours * 15000), 0, ',', '.');
                         } else {
                             // Hitung borongan (Tailor rate dari model baju)
                             $outputs = $record->outputs()

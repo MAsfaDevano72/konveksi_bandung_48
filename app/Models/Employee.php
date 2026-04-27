@@ -42,4 +42,18 @@ class Employee extends Model
     {
         return $this->hasMany(ProductionOutput::class, 'employee_id');
     }
+
+    public function attendances(): HasMany
+    {
+        return $this->hasMany(Attendance::class);
+    }
+
+    // Helper untuk mengecek apakah pegawai hadir hari ini
+    public function isPresentToday()
+    {
+        return $this->attendances()
+            ->where('date', now()->toDateString())
+            ->whereIn('status', ['Hadir', 'Lembur']) 
+            ->exists();
+    }
 }

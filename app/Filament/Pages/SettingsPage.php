@@ -8,6 +8,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TimePicker;
 use Filament\Forms\Form;
 use Filament\Pages\Page;
 use Filament\Notifications\Notification;
@@ -68,6 +69,21 @@ class SettingsPage extends Page implements HasForms
                                 7 => 'H-7 Sebelum Deadline',
                             ])
                             ->visible(fn ($get) => $get('notification_deadline')),
+                    ]),
+
+                Section::make('Jam Operasional')
+                    ->description('Atur jendela waktu absensi harian')
+                    ->icon('heroicon-m-clock')
+                    ->columns(2)
+                    ->schema([
+                        TimePicker::make('work_start_time')
+                            ->label('Jam Masuk')
+                            ->default('07:00')
+                            ->required(),
+                        TimePicker::make('work_end_time')
+                            ->label('Jam Pulang')
+                            ->default('17:00')
+                            ->required(),
                     ]),
             ])
             ->statePath('data');

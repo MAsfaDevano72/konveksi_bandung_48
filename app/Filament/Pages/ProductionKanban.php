@@ -492,12 +492,17 @@ class ProductionKanban extends KanbanBoard
                             ->label('Pilih Tim Cutting (Max 2 Orang)')
                             ->options(fn() => \App\Models\Employee::where('status', 'active')
                                 ->where('job_desk', 'Cutting')
+                                ->whereHas('attendances', function ($query) {
+                                    $query->whereDate('date', now())
+                                        ->whereIn('status', ['Hadir', 'Lembur']);
+                                })
                                 ->pluck('name', 'id'))
                             ->multiple()
                             ->minItems(1)
                             ->maxItems(2)
                             ->required()
                             ->searchable()
+                            ->helperText('Hanya pegawai yang sudah absen masuk hari ini yang bisa dipilih.')
                             ->visible(fn() => auth()->user()->hasAnyRole(['Admin', 'Owner', 'Cutting'])),
                     ]),
 

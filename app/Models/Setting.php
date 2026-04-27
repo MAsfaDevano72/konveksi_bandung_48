@@ -14,5 +14,7 @@ class Setting extends Model
         'company_address',
         'notification_deadline',
         'deadline_reminder_days',
+        'work_start_time',
+        'work_end_time',        
     ];
 }

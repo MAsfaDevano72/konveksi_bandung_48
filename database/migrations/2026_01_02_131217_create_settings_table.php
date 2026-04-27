@@ -22,6 +22,8 @@ return new class extends Migration
             // Notifikasi
             $table->boolean('notification_deadline')->default(true);
             $table->integer('deadline_reminder_days')->default(3);
+            $table->time('work_start_time')->default('07:00');
+            $table->time('work_end_time')->default('17:00');
             $table->timestamps();
         });
     }
