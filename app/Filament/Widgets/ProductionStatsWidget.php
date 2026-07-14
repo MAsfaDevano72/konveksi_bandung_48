@@ -25,7 +25,7 @@ class ProductionStatsWidget extends BaseWidget
                 ->description('Tahap Penjahitan')
                 ->descriptionIcon('heroicon-m-receipt-percent')
                 ->color('info'),
-            Stat::make('Sedang Packing', Order::where('status', 'QC/Packing')->count())
+            Stat::make('Sedang QC & Packing', Order::where('status', 'QC/Packing')->count())
                 ->description('Tahap QC & Packing')
                 ->descriptionIcon('heroicon-m-archive-box')
                 ->color('purple'),
@@ -34,10 +34,5 @@ class ProductionStatsWidget extends BaseWidget
                 ->descriptionIcon('heroicon-m-check-badge')
                 ->color('success'),
         ];
-    }
-
-    public static function canView(): bool
-    {
-        return auth()->user()->hasAnyRole(['Admin', 'Owner', 'Tailor']);
     }
 }

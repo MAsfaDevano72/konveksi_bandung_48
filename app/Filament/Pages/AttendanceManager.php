@@ -152,4 +152,9 @@ class AttendanceManager extends Page
             'todayDate' => $now->translatedFormat('l, d F Y'),
         ];
     }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()->hasAnyRole(['Admin', 'Owner']);
+    }
 }

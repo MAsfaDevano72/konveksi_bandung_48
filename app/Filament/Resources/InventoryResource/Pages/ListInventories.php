@@ -69,11 +69,11 @@ class ListInventories extends ListRecords
                         $inventory->increment('length', $data['quantity_yard']);
                     }
 
-                    // Catat History
                     $inventory->histories()->create([
                         'type' => 'Masuk',
                         'quantity' => $data['quantity'],
-                        'notes' => $data['notes'] . ($inventory->type === 'Kain' ? " (+{$data['quantity_yard']} Yard)" : ""),
+                        'total_yard' => $inventory->type === 'Kain' ? ($data['quantity_yard'] ?? null) : null,
+                        'notes' => $data['notes'],
                     ]);
 
                     Notification::make()->title('Stok & Saldo Yard berhasil ditambahkan')->success()->send();
@@ -124,7 +124,8 @@ class ListInventories extends ListRecords
                     $item->histories()->create([
                         'type' => 'Keluar',
                         'quantity' => $data['quantity'],
-                        'notes' => $data['notes'] . ($item->type === 'Kain' ? " (-{$data['quantity_yard']} Yard)" : ""),
+                        'total_yard' => $item->type === 'Kain' ? ($data['quantity_yard'] ?? null) : null,
+                        'notes' => $data['notes'],
                     ]);
 
                     Notification::make()->title('Stok berhasil dikurangi')->success()->send();

@@ -92,4 +92,9 @@ class AttendanceResource extends Resource
             'index' => Pages\ListAttendances::route('/'),
         ];
     }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()->hasAnyRole(['Admin', 'Owner']);
+    }
 }

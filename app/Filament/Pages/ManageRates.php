@@ -10,8 +10,8 @@ class ManageRates extends Page
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
     protected static ?string $navigationLabel = 'Tarif Produksi';
     protected static ?string $title = 'Pengaturan Tarif Produksi';
-    protected static ?string $navigationGroup = 'Sistem';
-    protected static ?string $slug = 'production-rates';
+    protected static ?string $navigationGroup = 'Keuangan & Payroll';
+    protected static ?string $slug = 'manage-rates';
 
     protected static string $view = 'filament.pages.manage-rates';
 

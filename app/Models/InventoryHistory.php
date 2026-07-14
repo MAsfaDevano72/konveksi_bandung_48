@@ -14,6 +14,7 @@ class InventoryHistory extends Model
         'inventory_id',
         'type',
         'quantity',
+        'total_yard',
         'notes'
     ];
 

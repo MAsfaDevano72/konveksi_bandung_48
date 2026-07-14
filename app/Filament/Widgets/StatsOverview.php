@@ -66,11 +66,6 @@ class StatsOverview extends BaseWidget
                 ->description('Total pesanan sukses')
                 ->color('success')
                 ->icon('heroicon-m-check-badge'),
-
-            Stat::make('Total Pendapatan', 'Rp ' . number_format($data['totalRevenue'], 0, ',', '.'))
-                ->description('Akumulasi pendapatan dari pesanan')
-                ->color('success')
-                ->icon('heroicon-m-banknotes'),
         ];
 
         // Membuat array untuk kartu Gudang (extraStats)
@@ -93,6 +88,11 @@ class StatsOverview extends BaseWidget
                 ->description('Pegawai aktif')
                 ->color('primary')
                 ->icon('heroicon-m-users'),
+
+            Stat::make('Total Pendapatan', 'Rp ' . number_format($data['totalRevenue'], 0, ',', '.'))
+                ->description('Akumulasi pendapatan dari pesanan')
+                ->color('success')
+                ->icon('heroicon-m-banknotes'),
         ];
 
         if ($isGudang) {

@@ -44,6 +44,7 @@ class AdminPanelProvider extends PanelProvider
                 'Manajemen Pegawai',
                 'Manajemen Gudang',
                 'Produksi',
+                'Keuangan & Payroll',
                 'Sistem',
             ])
             ->renderHook(

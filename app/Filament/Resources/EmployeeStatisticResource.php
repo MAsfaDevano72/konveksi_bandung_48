@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
-class EmployeeStatisticResource extends Resource
+class EmployeeStatisticResource extends Resource 
 {
     protected static ?string $model = Employee::class;
     protected static ?string $navigationIcon = 'heroicon-o-presentation-chart-line';
@@ -51,10 +51,23 @@ class EmployeeStatisticResource extends Resource
                 Tables\Columns\TextColumn::make('base_rate')
                     ->label('Tarif')
                     ->getStateUsing(function (Employee $record) {
-                        $rate = $record->roleRate->rate_amount ?? 0;
+                        if (!blank($record->rate_per_pcs) && $record->rate_per_pcs > 0) {
+                            $rate = $record->rate_per_pcs;
+                        } else {
+                            $rate = $record->roleRate->rate_amount ?? 0;
+                        }
+                        
                         return 'Rp ' . number_format($rate, 0, ',', '.');
                     })
-                    ->description(fn (Employee $record) => ($record->roleRate->rate_type ?? '') === 'pcs' ? '/ Pcs' : '/ Hari'),
+                    ->description(function (Employee $record) {
+                        $type = ($record->roleRate->rate_type ?? '');
+                        $suffix = $type === 'pcs' ? '/ Pcs' : '/ Hari';
+                        
+                        if (!blank($record->rate_per_pcs) && $record->rate_per_pcs > 0) {
+                            return $suffix . '';
+                        }
+                        return $suffix;
+                    }),
 
                 // Total Hasil Kerja (Qty)
                 Tables\Columns\TextColumn::make('total_qty')
@@ -71,8 +84,9 @@ class EmployeeStatisticResource extends Resource
                         return $qty . ' Pcs';
                     }),
 
-                // 3. PERBAIKAN: Hitungan Hari Kerja (Ucup Fix)
+                // 3.  Hitungan Hari Kerja 
                 Tables\Columns\TextColumn::make('attendance_days')
+                    ->label('Kehadiran')
                     ->getStateUsing(function (Employee $record, $livewire) {
                         $start = $livewire->tableFilters['from'] ?? now()->startOfMonth();
                         $until = $livewire->tableFilters['until'] ?? now();
@@ -94,34 +108,43 @@ class EmployeeStatisticResource extends Resource
                 // Di dalam kolom estimasi_upah
                 Tables\Columns\TextColumn::make('estimasi_upah')
                     ->getStateUsing(function (Employee $record, $livewire) {
-                        $start = $livewire->tableFilters['from'] ?? now()->startOfMonth();
-                        $until = $livewire->tableFilters['until'] ?? now();
-                        $salaryType = $record->roleRate->rate_type ?? 'pcs';
-                        $baseRate = $record->roleRate->rate_amount ?? 0;
+                        $start = $livewire->tableFilters['from'] ?? now()->startOfMonth()->format('Y-m-d');
+                        $until = $livewire->tableFilters['until'] ?? now()->format('Y-m-d');
+                        
+                        $salaryType = strtolower($record->roleRate->rate_type ?? 'pcs');
+                        
+                        if (!blank($record->rate_per_pcs) && $record->rate_per_pcs > 0) {
+                            $baseRate = $record->rate_per_pcs;
+                        } else {
+                            $baseRate = $record->roleRate->rate_amount ?? 0;
+                        }
+                        
+                        $totalIncome = 0;
 
                         if ($salaryType === 'daily') {
-                            // Hitung Hari Kerja * Rate + Total Lembur * (Rate/8 jam - contoh)
+                            // Hitung Hari Kerja
                             $days = \App\Models\Attendance::where('employee_id', $record->id)
                                 ->whereBetween('date', [$start, $until])
                                 ->whereIn('status', ['Hadir', 'Lembur'])
                                 ->count();
                             
+                            // Hitung Jam Lembur
                             $otHours = \App\Models\Attendance::where('employee_id', $record->id)
                                 ->whereBetween('date', [$start, $until])
+                                ->whereIn('status', ['Hadir', 'Lembur'])
                                 ->sum('overtime_hours');
 
-                            // Contoh rumus: (Hari * Rate) + (Jam Lembur * 15.000)
-                            return 'Rp ' . number_format(($days * $baseRate) + ($otHours * 15000), 0, ',', '.');
+                            // Rumus: (Hari Kerja * Tarif) + (Total Jam Lembur * 15.000)
+                            $totalIncome = ($days * $baseRate) + ($otHours * 15000);
                         } else {
-                            // Hitung borongan (Tailor rate dari model baju)
+                            // Logika Borongan
                             $outputs = $record->outputs()
                                 ->with(['order.garmentModel'])
-                                ->whereBetween('created_at', $dateRange)
+                                ->whereBetween('created_at', [\Illuminate\Support\Carbon::parse($start)->startOfDay(), \Illuminate\Support\Carbon::parse($until)->endOfDay()])
                                 ->get();
 
                             foreach ($outputs as $output) {
-                                // Ambil rate khusus tailor dari model baju, jika tidak ada pakai standar rate
-                                $modelRate = $output->order->garmentModel->tailor_rate ?? $standardRate;
+                                $modelRate = $output->order->garmentModel->tailor_rate ?? $baseRate;
                                 $totalIncome += ($output->qty * $modelRate);
                             }
                         }
@@ -142,5 +165,10 @@ class EmployeeStatisticResource extends Resource
         return [
             'index' => Pages\ListEmployeeStatistics::route('/'),
         ];
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()->hasAnyRole(['Admin', 'Owner']);
     }
 }

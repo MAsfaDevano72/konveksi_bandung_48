@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('inventory_id')->constrained('inventories')->onDelete('cascade');
             $table->enum('type', ['Masuk', 'Keluar', 'Terpakai']);
             $table->float('quantity');
+            $table->decimal('total_yard', 10, 2)->nullable();
             $table->text('notes')->nullable();
             $table->timestamps();
         });

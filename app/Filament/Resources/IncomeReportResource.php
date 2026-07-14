@@ -23,10 +23,9 @@ class IncomeReportResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-presentation-chart-line';
     protected static ?string $navigationLabel = 'Laporan Pendapatan';
-    protected static ?string $navigationGroup = 'Produksi'; // Taruh di grup Produksi
+    protected static ?string $navigationGroup = 'Keuangan & Payroll';
     protected static ?int $navigationSort = 10;
 
-    // HANYA Admin dan Owner yang bisa melihat menu ini
     public static function canViewAny(): bool { return Auth::user()->hasAnyRole(['Admin', 'Owner']); }
 
     public static function table(Table $table): Table

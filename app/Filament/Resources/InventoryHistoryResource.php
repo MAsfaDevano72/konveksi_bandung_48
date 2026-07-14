@@ -53,9 +53,17 @@ class InventoryHistoryResource extends Resource
                                 ->disabled()
                                 ->suffix(fn ($record) => $record?->inventory?->unit ?? 'Unit'),
 
-                            Forms\Components\TextInput::make('inventory_length')
-                                ->label('Panjang Per Rol')
-                                ->formatStateUsing(fn ($record) => $record?->inventory?->length ? $record->inventory->length . ' Yard' : '-')
+                            Forms\Components\TextInput::make('total_yard')
+                                ->label('Total Volume (Yard)')
+                                ->formatStateUsing(function ($record) {
+                                    $isKain = $record?->inventory?->type === 'Kain' || str_contains(strtolower($record?->bahan_baku), 'sabrina');
+                                    
+                                    if (!$isKain || is_null($record?->total_yard)) {
+                                        return '-';
+                                    }
+                                    
+                                    return number_format($record->total_yard, 2) . ' Yard';
+                                })
                                 ->disabled(),
                                 
                             Forms\Components\DateTimePicker::make('created_at')
@@ -87,6 +95,10 @@ class InventoryHistoryResource extends Resource
                     ->label('Bahan Baku')
                     ->searchable(),
 
+                Tables\Columns\TextColumn::make('inventory.color')
+                    ->label('Warna')
+                    ->searchable(),
+ 
                 Tables\Columns\TextColumn::make('type')
                     ->label('Tipe')
                     ->badge()
@@ -107,6 +119,21 @@ class InventoryHistoryResource extends Resource
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Jumlah')
                     ->numeric()
+                    ->alignCenter(),
+
+                Tables\Columns\TextColumn::make('total_yard')
+                    ->label('Total Volume')
+                    ->getStateUsing(function ($record) {
+                        $isKain = $record->inventory?->type === 'Kain' || str_contains(strtolower($record->bahan_baku), 'sabrina');
+                        
+                        if (!$isKain || is_null($record->total_yard)) {
+                            return '-';
+                        }
+                        
+                        return number_format($record->total_yard, 2) . ' Yard';
+                    })
+                    ->badge()
+                    ->color('info')
                     ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('notes')
